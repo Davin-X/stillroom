@@ -1,0 +1,203 @@
+export type { MediaItem, Album, Tag, ImportSession, LibraryFilter, DuplicateGroup } from "./media";
+export type { AppSettings } from "./settings";
+
+import type { MediaItem, Album, Tag, ImportSession, LibraryFilter, DuplicateGroup } from "./media";
+import type { AppSettings } from "./settings";
+
+export interface ScanResult {
+  items: MediaItem[];
+  albums: Album[];
+  tags: Tag[];
+  sessions: ImportSession[];
+  totalSize: number;
+  duration: number;
+}
+
+export interface LibraryFilterDTO {
+  kind?: string;
+  favorite?: boolean;
+  hidden?: boolean;
+  albumId?: string;
+  query?: string;
+  dateFrom?: number;
+  dateTo?: number;
+  limit?: number;
+  offset?: number;
+  sortBy?: "capturedAt" | "modifiedAt" | "name" | "size";
+  sortOrder?: "asc" | "desc";
+}
+
+export interface ThumbnailRequest {
+  itemId: string;
+  size: 64 | 128 | 256 | 512 | 1024;
+  format?: "jpeg" | "webp" | "avif";
+}
+
+export interface ThumbnailResponse {
+  itemId: string;
+  dataUrl: string;           // base64 data URL
+  width: number;
+  height: number;
+}
+
+export interface ExifData {
+  capturedAt?: number;
+  camera?: string;
+  lens?: string;
+  exposure?: string;
+  iso?: number;
+  latitude?: number;
+  longitude?: number;
+  width?: number;
+  height?: number;
+  metadataError?: string;
+}
+
+export interface RenderRequest {
+  sourcePath: string;
+  edits: EditValues;
+  outputFormat: "jpeg" | "png" | "webp" | "heic" | "avif";
+  quality: number;
+  stripMetadata: boolean;
+  crop?: CropRect;
+}
+
+export interface EditValues {
+  exposure: number;
+  contrast: number;
+  warmth: number;
+  shadows: number;
+  highlights: number;
+  saturation: number;
+  rotation: number;
+  flip: boolean;
+}
+
+export interface CropRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface ExportResult {
+  outputPath: string;
+  size: number;
+  width: number;
+  height: number;
+}
+
+export interface BatchExportRequest {
+  items: BatchExportItem[];
+  outputFolder: string;
+  pattern: string;
+  format: "jpeg" | "png" | "webp" | "heic" | "avif" | "source";
+  quality: number;
+  stripMetadata: boolean;
+  maxDimension?: number;
+}
+
+export interface BatchExportItem {
+  id: string;
+  sourcePath: string;
+  index: number;
+}
+
+export interface BatchExportResult {
+  exported: number;
+  failed: Array<{ itemId: string; error: string }>;
+  outputs: string[];
+}
+
+export interface VaultSession {
+  unlocked: boolean;
+  expiresAt?: number;
+  method: "password" | "touchid";
+}
+
+export interface VaultItem {
+  mediaId: string;
+  encryptedKey: string;        // Base64 encrypted DEK
+  addedAt: number;
+}
+
+export interface LibraryChangedEvent {
+  type: "added" | "updated" | "removed" | "reindexed";
+  itemIds: string[];
+  timestamp: number;
+}
+
+export interface ImportProgressEvent {
+  sessionId: string;
+  phase: "scanning" | "reading" | "hashing" | "indexing" | "complete";
+  processed: number;
+  total: number;
+  currentFile?: string;
+}
+
+export interface ThumbnailReadyEvent {
+  itemId: string;
+  size: number;
+  dataUrl: string;
+}
+
+// Tauri Command Signatures (for type-safe invoke)
+// Using a mapped type for command signatures
+export type TauriCommandSignature = {
+  // Library
+  scan_library: (rootPath: string) => ScanResult;
+  import_files: (paths: string[]) => ScanResult;
+  get_library_items: (filter: LibraryFilterDTO) => MediaItem[];
+  get_item_thumbnail: (request: ThumbnailRequest) => ThumbnailResponse;
+  watch_folder: (path: string) => void;
+  unwatch_folder: (path: string) => void;
+
+  // Items
+  toggle_favorite: (itemId: string, favorite: boolean) => void;
+  toggle_hidden: (itemId: string, hidden: boolean) => void;
+  update_item_tags: (itemId: string, tags: string[]) => void;
+  move_to_trash: (paths: string[]) => void;
+  reveal_in_finder: (path: string) => void;
+
+  // Albums
+  create_album: (name: string, colorIndex?: number) => Album;
+  delete_album: (albumId: string) => void;
+  rename_album: (albumId: string, name: string) => void;
+  add_to_album: (albumId: string, itemIds: string[]) => void;
+  remove_from_album: (albumId: string, itemIds: string[]) => void;
+
+  // Metadata
+  read_exif: (path: string) => ExifData;
+  write_exif: (path: string, data: Partial<ExifData>) => void;
+
+  // Editing
+  render_edited: (request: RenderRequest) => ExportResult;
+
+  // Batch
+  batch_export: (request: BatchExportRequest) => BatchExportResult;
+
+  // Duplicates
+  find_duplicates: () => DuplicateGroup[];
+  compute_hash: (path: string) => string;
+
+  // Vault
+  vault_unlock: (biometric: boolean) => VaultSession;
+  vault_lock: () => void;
+  vault_add_items: (itemIds: string[]) => void;
+  vault_remove_items: (itemIds: string[]) => void;
+  vault_list_items: () => MediaItem[];
+  vault_get_status: () => { enabled: boolean; locked: boolean; autoLockMinutes: number };
+
+  // Finder
+  write_finder_tags: (path: string, tags: string[]) => void;
+  read_finder_tags: (path: string) => string[];
+
+  // Settings
+  get_settings: () => AppSettings;
+  save_settings: (settings: Partial<AppSettings>) => AppSettings;
+
+  // App
+  get_version: () => string;
+  check_updates: () => { available: boolean; version: string; notes: string };
+  open_external: (url: string) => void;
+};

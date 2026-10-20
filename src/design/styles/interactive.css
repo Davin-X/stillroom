@@ -1,0 +1,273 @@
+/* ==========================================================================
+   Stillroom - interactive states
+   --------------------------------------------------------------------------
+   One consistent feel for every control in the app:
+
+     hover    -> the accent border/label treatment the top-bar buttons use,
+                 or a quiet surface tint for text/ghost controls
+     press    -> a small scale or shade so clicks feel physical
+     focus    -> a single blue focus ring (keyboard only, :focus-visible)
+     disabled -> dimmed, no hover reaction, not-allowed cursor
+
+   Loaded after global.css + settings.css and before App.css, so plain
+   `.class` rules here win over the design system, while App.css (native shell)
+   still has the final word on anything it deliberately overrides.
+   ========================================================================== */
+
+.app-frame {
+  --i-dur: 0.15s;
+  --i-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --i-tint: var(--surface-3);
+  --i-ring: rgba(77, 142, 247, 0.18);
+  --blue-hover: #2d6bd0;
+  --danger: #c2574f;
+  --danger-tint: rgba(194, 87, 79, 0.1);
+  --danger-line: #e6a4a1;
+}
+
+.app-frame.dark {
+  --i-tint: #2b3138;
+  --i-ring: rgba(138, 180, 255, 0.24);
+  --blue-hover: #a6c4ff;
+  --danger: #f0918a;
+  --danger-tint: rgba(240, 145, 138, 0.14);
+  --danger-line: rgba(240, 145, 138, 0.45);
+}
+
+/* --------------------------------------------------------------------------
+   1. Motion - give every control the same timing so the UI feels of a piece.
+   -------------------------------------------------------------------------- */
+
+.app-frame :is(button, [role="button"], a, summary, select) {
+  transition:
+    background-color var(--i-dur) var(--i-ease),
+    border-color var(--i-dur) var(--i-ease),
+    color var(--i-dur) var(--i-ease),
+    box-shadow var(--i-dur) var(--i-ease),
+    opacity var(--i-dur) var(--i-ease),
+    transform 0.09s var(--i-ease);
+}
+
+/* --------------------------------------------------------------------------
+   2. Neutral controls - border + label pick up the accent on hover.
+      (Matches the Light/gear buttons in the top bar.)
+   -------------------------------------------------------------------------- */
+
+.app-frame :is(
+  .toolbar-button,
+  .quiet-button,
+  .outline-button,
+  .theme-button,
+  .icon-button,
+  .inspector-action,
+  .selection-toolbar button,
+  .duplicate-group-head button,
+  .auto-adjust button,
+  .album-label button,
+  .filmstrip button,
+  .filmstrip-preview button
+):hover:not(:disabled) {
+  border-color: var(--blue);
+  color: var(--blue);
+  background-color: var(--surface-2);
+}
+
+/* Solid buttons: keep the fill but deepen it and lift a touch. */
+.app-frame .primary-button:hover:not(:disabled) {
+  background: var(--blue-hover);
+  box-shadow: 0 4px 14px rgba(52, 116, 212, 0.28);
+}
+
+.app-frame .danger-button {
+  border-color: var(--danger-line);
+  color: var(--danger);
+}
+
+.app-frame .danger-button:hover:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: var(--danger-tint);
+}
+
+/* --------------------------------------------------------------------------
+   3. Quiet / ghost controls - a surface tint instead of a border change.
+   (Written per selector on purpose: `:is()` inherits the specificity of its
+   heaviest argument, which made the cascade here unpredictable.)
+   -------------------------------------------------------------------------- */
+
+.app-frame :is(.edit-tabs button, .canvas-actions button, .edit-more-controls button):not(.active):hover:not(:disabled) {
+  background-color: var(--i-tint);
+  color: var(--ink);
+}
+
+.app-frame .quick-filter:not(.active):hover:not(:disabled) {
+  background-color: var(--i-tint);
+  color: var(--ink);
+}
+
+/* Segmented control: the hovered segment lifts out of the track. */
+.app-frame .layout-switcher button:not(.selected):hover:not(:disabled) {
+  background: var(--surface);
+  color: var(--blue);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+/* Inline "view all" style links read as links on hover. */
+.app-frame :is(.date-group-heading > button, .inspector-section-head button, .finder-tags button):hover:not(:disabled) {
+  background: transparent;
+  color: var(--blue);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Radio rows highlight as a whole. */
+.app-frame .radio-option:hover {
+  border-radius: 6px;
+  background-color: var(--i-tint);
+}
+
+/* Nav + album rows already tint; make the unselected one react on press too. */
+.app-frame :is(.nav-item, .album-nav button):not(.active):active:not(:disabled) {
+  background-color: var(--i-tint);
+}
+
+/* Context menus behave like macOS: accent highlight, except destructive rows. */
+.app-frame .context-menu-item:not(.danger):hover,
+.app-frame .context-menu-item:not(.danger):focus-visible {
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+.app-frame .context-menu-item.danger:hover,
+.app-frame .context-menu-item.danger:focus-visible {
+  background: var(--danger-tint);
+  color: var(--danger);
+}
+
+/* --------------------------------------------------------------------------
+   4. Fields - focus glow so the active input is obvious.
+   -------------------------------------------------------------------------- */
+
+.app-frame .search-field:focus-within {
+  border-color: var(--blue);
+  box-shadow:
+    0 0 0 3px var(--i-ring),
+    inset 0 0 0 1px var(--field-focus-inner),
+    inset 0 1px 2px var(--field-inner);
+}
+
+.app-frame .settings-select:hover:not(:disabled),
+.app-frame .settings-input:hover:not(:disabled) {
+  border-color: var(--line-strong);
+}
+
+.app-frame .settings-input:focus,
+.app-frame .settings-input:focus-visible,
+.app-frame .settings-select:focus-visible {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px var(--i-ring);
+}
+
+/* --------------------------------------------------------------------------
+   5. Switches, radios, swatches.
+   -------------------------------------------------------------------------- */
+
+.app-frame .toggle-switch:hover .toggle-track {
+  box-shadow: 0 0 0 3px var(--i-ring);
+}
+
+.app-frame .toggle-switch:active .toggle-track::after {
+  transform: scale(0.92);
+}
+
+.app-frame .toggle-switch input:checked:active + .toggle-track::after {
+  transform: translateX(20px) scale(0.92);
+}
+
+.app-frame .radio-option:hover .radio-dot {
+  border-color: var(--blue);
+}
+
+/* --------------------------------------------------------------------------
+   6. Media surfaces.
+   -------------------------------------------------------------------------- */
+
+.app-frame .gallery-tile:hover .tile-image {
+  border-color: var(--line-strong);
+}
+
+.app-frame .viewer-arrow:hover {
+  border-color: rgba(255, 255, 255, 0.45);
+  background: rgba(20, 24, 30, 0.85);
+}
+
+.app-frame .viewer-overlay-bottom button:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* --------------------------------------------------------------------------
+   7. Press feedback - only on controls that are not positioned with a
+      transform (the viewer arrows are, so they are excluded).
+   -------------------------------------------------------------------------- */
+
+.app-frame :is(
+  .primary-button,
+  .danger-button,
+  .quiet-button,
+  .toolbar-button,
+  .outline-button,
+  .theme-button,
+  .inspector-action,
+  .selection-toolbar button,
+  .duplicate-group-head button,
+  .auto-adjust button,
+  .quick-filter,
+  .edit-tabs button,
+  .layout-switcher button,
+  .filmstrip button,
+  .context-menu-item,
+  .settings-tab
+):active:not(:disabled) {
+  transform: scale(0.975);
+}
+
+/* --------------------------------------------------------------------------
+   8. Disabled.
+   -------------------------------------------------------------------------- */
+
+.app-frame :is(
+  .danger-button,
+  .toolbar-button,
+  .outline-button,
+  .icon-button,
+  .theme-button,
+  .inspector-action,
+  .settings-select
+):disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.app-frame :is(button, [role="button"]):disabled:hover {
+  box-shadow: none;
+}
+
+/* --------------------------------------------------------------------------
+   9. Focus ring - one ring, keyboard only, for everything the design system
+      did not already cover.
+   -------------------------------------------------------------------------- */
+
+.app-frame :is(a, summary, [role="button"], [tabindex]:not(.context-menu-item)):focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.app-frame a {
+  color: var(--blue);
+  text-decoration-color: transparent;
+  text-underline-offset: 2px;
+}
+
+.app-frame a:hover {
+  text-decoration-color: currentColor;
+}

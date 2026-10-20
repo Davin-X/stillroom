@@ -1,0 +1,73 @@
+[package]
+name = "stillroom"
+version = "0.1.0"
+description = "A fast, local-first photo & video gallery app for macOS"
+authors = ["Devendra Kumar"]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/devendrakumar/mac-gallery"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Tauri
+tauri = { version = "2", features = ["protocol-asset",
+    "http-range",
+] }
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-shell = "2"
+
+# Async runtime
+tokio = { version = "1", features = ["full", "macros"] }
+
+# Database
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio", "macros", "time", "uuid", "chrono"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# UUID
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Time
+time = { version = "0.3", features = ["serde", "formatting", "macros", "std"] }
+
+# Error handling
+anyhow = "1"
+thiserror = "1"
+
+# Image processing
+image = "0.25"
+
+# Hashing
+ring = "0.17"
+hex = "0.4"
+
+# File watching (for future)
+notify = { version = "6", features = ["fsevent-sys"] }
+
+# Crypto for vault
+aes-gcm = "0.10"
+rand = "0.8"
+zeroize = "1"
+
+# macOS integration
+objc2 = "0.6.5"
+objc2-foundation = "0.3.2"
+
+# Extended attributes for Finder tags
+xattr = "1.5"
+
+# Moving originals to the macOS Trash (recoverable) instead of deleting them
+trash = "5"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Utilities
+walkdir = "2"
+dirs = "5"

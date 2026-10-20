@@ -1,0 +1,58 @@
+{
+  "name": "stillroom",
+  "version": "0.1.0",
+  "description": "A fast, local-first photo & video gallery app for macOS",
+  "private": true,
+  "license": "MIT",
+  "author": "Devendra Kumar",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Davin-X/stillroom.git"
+  },
+  "homepage": "https://github.com/Davin-X/stillroom#readme",
+  "bugs": {
+    "url": "https://github.com/Davin-X/stillroom/issues"
+  },
+  "keywords": [
+    "macOS",
+    "photo-gallery",
+    "local-first",
+    "tauri",
+    "rust",
+    "react",
+    "vite",
+    "exif",
+    "vault"
+  ],
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:web": "vite",
+    "build": "vite build",
+    "build:web": "vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts,.tsx || true"
+  },
+  "dependencies": {
+    "@tanstack/react-virtual": "^3.14.21",
+    "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-dialog": "^2.8.3",
+    "@tauri-apps/plugin-shell": "^2.0.0",
+    "exifr": "^7.1.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^4.5.7"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "typescript": "^5.5.0",
+    "vite": "^5.4.0"
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "productName": "Stillroom",
+  "version": "0.1.0",
+  "identifier": "com.stillroom.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Stillroom",
+        "width": 1280,
+        "height": 880,
+        "minWidth": 960,
+        "minHeight": 680,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 18, "y": 22 },
+        "decorations": true,
+        "resizable": true,
+        "fullscreen": false,
+        "maximizable": true,
+        "minimizable": true,
+        "closable": true,
+        "label": "main",
+        "backgroundColor": "#f7f8fa"
+      }
+    ],
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$HOME/**", "/Volumes/**"]
+      }
+    }
+  },
+  "bundle": {
+    "icon": ["icons/icon.png"]
+  }
+}

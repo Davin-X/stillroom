@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Stillroom harness</title>
+    <script>
+      const noop = async (cmd) => {
+        if (cmd === "get_settings") return {};
+        if (cmd === "get_vault_status") return { configured: false, locked: true, itemCount: 0 };
+        return [];
+      };
+      window.__TAURI_INTERNALS__ = {
+        convertFileSrc: (p) => p,
+        transformCallback: () => 1,
+        invoke: noop,
+        metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main" } },
+        plugins: {},
+      };
+      window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

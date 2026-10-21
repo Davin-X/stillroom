@@ -566,6 +566,13 @@ body {
   box-sizing: border-box;
 }
 
+/* Progressive rendering footer: only shown while more tiles are waiting. */
+.grid-more {
+  display: flex;
+  justify-content: center;
+  padding: 16px 0 8px;
+}
+
 
 
 /* Gallery Grid
@@ -2086,10 +2093,10 @@ body {
 
 .stat-row {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
-  padding: 8px 12px;
+  gap: 8px;
+  padding: 8px 10px;
   background: var(--surface);
   color: var(--text);
   font-size: 12px;
@@ -2097,22 +2104,146 @@ body {
 }
 .stat-row:hover { background: var(--surface-2); }
 .stat-row.hidden { opacity: 0.6; }
-.stat-row.size { margin-top: 0; border-top: 1px solid var(--line); }
-.stat-label { 
-  color: var(--muted); 
-  font-weight: 500; 
+.stat-row.size {
+  margin-top: 0;
+  border-top: 1px solid var(--line);
+  /* The total row has no kind dot, so give the value its own auto track
+     instead of leaving an empty third column. */
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.stat-label {
+  color: var(--muted);
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
-.stat-value { 
-  font-weight: 600; 
-  font-variant-numeric: tabular-nums; 
+.stat-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
   text-align: right;
   min-width: 0;
-}
-.stat-size { 
-  color: var(--faint); 
-  font-weight: 400; 
+  /* Counts and sizes must never wrap or clip: let the label ellipsize
+     first, since the numbers are the point of the row. */
   white-space: nowrap;
+}
+.stat-size {
+  color: var(--faint);
+  font-weight: 400;
+  font-size: 11px;
+  white-space: nowrap;
+  margin-left: 0.3em;
+}
+
+/* ===== Library sources entry (sidebar) ===== */
+/* One door, not a second list: the sidebar opens the Sources sheet, which owns
+   every add/remove action. */
+.sources-entry-section {
+  padding-bottom: 12px;
+}
+
+.sources-entry {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.sources-entry:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-2);
+}
+
+.sources-entry-icon {
+  display: inline-flex;
+  color: var(--faint);
+}
+
+.sources-entry-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.sources-entry-name {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sources-entry-count {
+  color: var(--faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sources-entry-chevron {
+  color: var(--faint);
+  font-size: 15px;
+  line-height: 1;
+}
+
+/* Source switcher in the library header, beside Open folder. It scopes the
+   grid and the SHOW counts without opening the Sources manager. */
+.source-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 8px 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--faint);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.source-select:hover,
+.source-select:focus-within {
+  border-color: var(--line-strong);
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.source-select-label {
+  color: var(--faint);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.source-select select {
+  max-width: 170px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.source-select select:focus-visible {
+  outline: none;
 }
 
 .storage-widget {
@@ -3158,7 +3289,9 @@ body {
 /* Responsive */
 @media (max-width: 1100px) {
   .app-body {
-    grid-template-columns: 200px minmax(0, 1fr);
+    /* Keep the full sidebar width: the stats rows need it for counts in the
+       thousands plus their size, and the main pane can spare 20px. */
+    grid-template-columns: 220px minmax(0, 1fr);
   }
   .library-layout.with-inspector {
     grid-template-columns: minmax(0, 1fr) 260px;

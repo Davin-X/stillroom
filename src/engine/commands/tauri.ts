@@ -16,6 +16,7 @@ import type {
   DuplicateGroup,
   VaultSession,
   VaultItem,
+  LibraryFolder,
   LibraryChangedEvent,
   ImportProgressEvent,
   ThumbnailReadyEvent,
@@ -44,6 +45,12 @@ export const tauri = {
 
     unwatchFolder: (path: string): Promise<void> =>
       invoke("unwatch_folder", { path }),
+
+    getFolders: (): Promise<LibraryFolder[]> =>
+      invoke("get_library_folders"),
+
+    removeFolder: (path: string, deleteFiles = false): Promise<number> =>
+      invoke("remove_library_folder", { path, deleteFiles }),
   },
 
   items: {
@@ -191,11 +198,18 @@ export const defaultEdits: EditValues = {
   flip: false,
 };
 
-// Helper: Format bytes
+// Helper: Format bytes with unit scaling (B → KB → MB → GB → TB)
 export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB", "PB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  const decimals = unit === 0 ? 0 : 1;
+  return `${value.toFixed(decimals)} ${units[unit]}`;
 }
 
 // Helper: Format dimensions

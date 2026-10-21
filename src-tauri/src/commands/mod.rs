@@ -30,6 +30,17 @@ pub struct ScanResult {
     pub duration: i64,
 }
 
+/// A folder in the library, either explicitly imported or inferred from the
+/// on-disk location of items added before folder tracking existed.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryFolder {
+    pub path: String,
+    pub name: String,
+    pub item_count: i64,
+    pub total_size: i64,
+}
+
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct LibraryFilterDTO {
@@ -310,6 +321,40 @@ fn now_ms() -> i64 {
     (OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000) as i64
 }
 
+/// Normalize a folder path so comparisons do not depend on a trailing slash.
+fn normalize_root(path: &str) -> String {
+    if path.len() > 1 {
+        path.trim_end_matches('/').to_string()
+    } else {
+        path.to_string()
+    }
+}
+
+/// True when `path` sits inside `root`. Uses a real directory-boundary check so
+/// `/Photos2/a.jpg` is never counted as part of `/Photos`.
+fn path_is_inside(path: &str, root: &str) -> bool {
+    let file = normalize_root(path);
+    let root = normalize_root(root);
+    if root == "/" {
+        return file.starts_with('/');
+    }
+    file.len() > root.len() && file.starts_with(&root) && file.as_bytes()[root.len()] == b'/'
+}
+
+/// Record an imported folder so the sidebar can list and remove it later.
+/// Failures are non-fatal: a catalog write should never fail an import.
+async fn remember_folder(db: &SqlitePool, root: &str) {
+    let path = normalize_root(root);
+    if path.is_empty() || !Path::new(&path).is_dir() {
+        return;
+    }
+    let _ = sqlx::query("INSERT OR IGNORE INTO library_folders (path, added_at) VALUES (?, ?)")
+        .bind(&path)
+        .bind(now_ms())
+        .execute(db)
+        .await;
+}
+
 fn is_media_file(ext: &str) -> bool {
     let image_exts = ["avif", "bmp", "gif", "heic", "heif", "jfif", "jpe", "jpeg", "jpg", "jxl", "png", "tif", "tiff", "webp"];
     let raw_exts = ["3fr", "ari", "arw", "bay", "cap", "cr2", "cr3", "dcs", "dcr", "dng", "drf", "eip", "erf", "fff", "gpr", "iiq", "k25", "kdc", "mdc", "mef", "mos", "mrw", "nef", "nrw", "obm", "orf", "pef", "ptx", "pxn", "r3d", "raf", "raw", "rw2", "rwl", "sr2", "srf", "srw", "x3f"];
@@ -476,6 +521,12 @@ pub async fn scan_library(
     // Sort by modified date desc
     items.sort_by(|a, b| b.modified_at.cmp(&a.modified_at));
 
+    // Only remember the folder once it actually contributed media, so an
+    // accidental pick of an empty folder never shows up in the sidebar.
+    if !items.is_empty() {
+        remember_folder(&db, &root_path).await;
+    }
+
     let duration = start.elapsed().as_millis() as i64;
 
     hydrate_relations(&db, &mut items).await?;
@@ -570,6 +621,18 @@ pub async fn import_files(
     }
 
     items.sort_by(|a, b| b.modified_at.cmp(&a.modified_at));
+
+    // Remember any folders the user picked wholesale, so they can be removed
+    // from the library in one step later. Individual files are grouped by
+    // their parent directory when the folder list is built.
+    if !items.is_empty() {
+        for raw in &paths {
+            if Path::new(raw).is_dir() {
+                remember_folder(&db, raw).await;
+            }
+        }
+    }
+
     hydrate_relations(&db, &mut items).await?;
 
     let albums = sqlx::query_as::<_, Album>(&format!("{} ORDER BY a.created_at ASC", ALBUM_SELECT))
@@ -703,6 +766,186 @@ pub async fn watch_folder(path: String, state: State<'_, AppState>) -> Result<()
 
 #[tauri::command]
 pub async fn unwatch_folder(path: String, state: State<'_, AppState>) -> Result<(), String> { let _ = (path, state); Ok(()) }
+
+/// Group a path that was imported before folder tracking existed.
+///
+/// Files under the home directory collapse to their first folder
+/// (`~/Pictures/2024/01/a.jpg` → `~/Pictures`); anything else collapses to the
+/// volume and first component (`/Applications/Safari.app/...` →
+/// `/Applications/Safari.app`). This keeps the sidebar to a handful of rows
+/// instead of one row per leaf directory.
+fn inferred_folder_root(path: &str) -> Option<String> {
+    let home = std::env::var("HOME").ok().map(|h| normalize_root(&h))?;
+    let file = normalize_root(path);
+
+    if path_is_inside(&file, &home) {
+        let rest = &file[home.len() + 1..];
+        let first = rest.split('/').find(|part| !part.is_empty())?;
+        return Some(format!("{}/{}", home, first));
+    }
+
+    let parts: Vec<&str> = file.split('/').filter(|part| !part.is_empty()).collect();
+    if parts.is_empty() {
+        return None;
+    }
+    let take = parts.len().min(2);
+    Some(format!("/{}", parts[..take].join("/")))
+}
+
+/// List the folders the library is made of.
+///
+/// Explicitly imported folders come from `library_folders`. Items imported
+/// before folder tracking existed are folded into [`inferred_folder_root`]
+/// buckets, and each item is counted exactly once under the most specific
+/// folder that contains it.
+#[tauri::command]
+pub async fn get_library_folders(state: State<'_, AppState>) -> Result<Vec<LibraryFolder>, String> {
+    let db = get_db(&state)?;
+
+    let registered: Vec<String> = sqlx::query_scalar("SELECT path FROM library_folders ORDER BY path ASC")
+        .fetch_all(&db)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let rows = sqlx::query("SELECT path, size FROM media_items")
+        .fetch_all(&db)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // One pass over the catalog: each item lands in exactly one folder.
+    let mut tallies: HashMap<String, (i64, i64)> = HashMap::new();
+    for row in &rows {
+        let item_path: String = row.get("path");
+        let size: i64 = row.get("size");
+
+        let owner = registered
+            .iter()
+            .filter(|root| path_is_inside(&item_path, root))
+            .max_by_key(|root| root.len())
+            .cloned()
+            .or_else(|| inferred_folder_root(&item_path));
+
+        if let Some(folder) = owner {
+            let tally = tallies.entry(folder).or_insert((0, 0));
+            tally.0 += 1;
+            tally.1 += size;
+        }
+    }
+
+    let mut folders: Vec<LibraryFolder> = tallies
+        .into_iter()
+        .map(|(path, (item_count, total_size))| {
+            let name = Path::new(&path)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| path.clone());
+            LibraryFolder { path, name, item_count, total_size }
+        })
+        .collect();
+
+    // Keep explicitly imported folders visible even when they are empty, so a
+    // stale entry can still be removed.
+    for root in &registered {
+        if !folders.iter().any(|folder| &folder.path == root) {
+            let name = Path::new(root)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| root.clone());
+            folders.push(LibraryFolder {
+                path: root.clone(),
+                name,
+                item_count: 0,
+                total_size: 0,
+            });
+        }
+    }
+
+    folders.sort_by(|a, b| {
+        b.item_count
+            .cmp(&a.item_count)
+            .then_with(|| a.path.to_lowercase().cmp(&b.path.to_lowercase()))
+    });
+    Ok(folders)
+}
+
+/// Remove a folder from Stillroom.
+///
+/// The files stay on disk by default: this only drops the folder's rows from
+/// the catalog. Pass `delete_files = true` to move the originals to the macOS
+/// Trash instead (used by the "also delete files" confirmation).
+#[tauri::command]
+pub async fn remove_library_folder(
+    path: String,
+    delete_files: Option<bool>,
+    state: State<'_, AppState>,
+) -> Result<i64, String> {
+    let db = get_db(&state)?;
+    let root = normalize_root(&path);
+    if root.is_empty() {
+        return Err("Refusing to remove an empty folder path".to_string());
+    }
+
+    let rows = sqlx::query("SELECT id, path FROM media_items")
+        .fetch_all(&db)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let targets: Vec<(String, String)> = rows
+        .iter()
+        .filter_map(|row| {
+            let item_path: String = row.get("path");
+            if path_is_inside(&item_path, &root) {
+                Some((row.get::<String, _>("id"), item_path))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    if delete_files.unwrap_or(false) {
+        for (_, item_path) in &targets {
+            trash::delete(item_path)
+                .map_err(|e| format!("Could not move {} to Trash: {}", item_path, e))?;
+        }
+    }
+
+    // Clean up join rows explicitly instead of relying on foreign-key cascades
+    // being enabled on this particular pooled connection.
+    for (id, _) in &targets {
+        for statement in [
+            "DELETE FROM media_tags WHERE media_id = ?",
+            "DELETE FROM album_items WHERE media_id = ?",
+            "DELETE FROM vault_items WHERE media_id = ?",
+            "DELETE FROM media_items WHERE id = ?",
+        ] {
+            sqlx::query(statement)
+                .bind(id)
+                .execute(&db)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+    }
+
+    // Forget the folder itself, plus any registered subfolder that lived
+    // inside it, so a later import is not shadowed by stale entries.
+    let registered: Vec<String> = sqlx::query_scalar("SELECT path FROM library_folders")
+        .fetch_all(&db)
+        .await
+        .map_err(|e| e.to_string())?;
+    for registered_path in registered {
+        if normalize_root(&registered_path) == root || path_is_inside(&registered_path, &root) {
+            sqlx::query("DELETE FROM library_folders WHERE path = ?")
+                .bind(&registered_path)
+                .execute(&db)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+    }
+
+    Ok(targets.len() as i64)
+}
 
 #[tauri::command]
 pub async fn toggle_favorite(item_id: String, favorite: bool, state: State<'_, AppState>) -> Result<(), String> {

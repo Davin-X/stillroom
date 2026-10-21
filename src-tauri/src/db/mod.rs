@@ -152,6 +152,19 @@ impl Database {
         .execute(&self.pool)
         .await?;
         
+        // Folders the user explicitly brought into the library. Rows are
+        // removed when the user removes the folder from Stillroom.
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS library_folders (
+                path TEXT PRIMARY KEY,
+                added_at INTEGER NOT NULL
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS vault_items (

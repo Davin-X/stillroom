@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 import type { MediaItem, Album, Tag, ImportSession, LibraryFilter, DuplicateGroup, Filter, LayoutMode, Screen } from "../types/media";
+import type { LibraryFolder } from "../types/commands";
 import { tauri } from "../commands/tauri";
 import { formatBytes } from "../commands/tauri";
 
@@ -11,6 +12,7 @@ interface LibraryState {
   tags: Tag[];
   sessions: ImportSession[];
   duplicates: DuplicateGroup[];
+  folders: LibraryFolder[];
 
   // UI State
   // inspectedId = inspection focus (single-click, Inspector, viewer cursor).
@@ -25,6 +27,9 @@ interface LibraryState {
   showInspector: boolean;
   sidebarOpen: boolean;
   activeAlbum: string | null;
+  // Source filter (a library folder path). Independent of `filter`, which is
+  // the media-kind filter; the two compose so "Photos inside Pictures" works.
+  activeSource: string | null;
   screen: Screen;
 
   // Status
@@ -44,6 +49,8 @@ interface LibraryState {
 
   // Actions - Data Loading
   loadLibrary: (filter?: LibraryFilter) => Promise<void>;
+  loadFolders: () => Promise<void>;
+  removeFolder: (path: string, deleteFiles?: boolean) => Promise<number>;
   importFolder: () => Promise<void>;
   importFiles: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -62,6 +69,7 @@ interface LibraryState {
 
   // Actions - Filters & View
   setFilter: (filter: Filter) => void;
+  setActiveSource: (path: string | null) => void;
   setQuery: (query: string) => void;
   setLayout: (layout: LayoutMode) => void;
   setScreen: (screen: Screen) => void;
@@ -104,7 +112,7 @@ interface ExportOptions {
 }
 
 function computeDerived(state: LibraryState) {
-  const { items, filter, query, activeAlbum, inspectedId, selectedIds } = state;
+  const { items, filter, query, activeAlbum, activeSource, inspectedId, selectedIds } = state;
   
   // Apply filters
   let visible = [...items];
@@ -132,6 +140,15 @@ function computeDerived(state: LibraryState) {
     const normalized = query.trim().toLowerCase();
     visible = visible.filter((item) =>
       `${item.name} ${item.camera || ""} ${item.lens || ""} ${item.tags.join(" ")}`.toLowerCase().includes(normalized)
+    );
+  }
+
+  // Source filter: only items physically inside the selected source folder.
+  // Uses a real path boundary so /Photos never matches /Photos2.
+  if (activeSource) {
+    const prefix = activeSource.endsWith("/") ? activeSource : `${activeSource}/`;
+    visible = visible.filter(
+      (item) => item.path === activeSource || item.path.startsWith(prefix),
     );
   }
   
@@ -167,6 +184,7 @@ export const useLibraryStore = create<LibraryState>()(
       tags: [],
       sessions: [],
       duplicates: [],
+      folders: [],
       inspectedId: null,
       selectedIds: [],
       filter: "All",
@@ -175,6 +193,7 @@ export const useLibraryStore = create<LibraryState>()(
       showInspector: true,
       sidebarOpen: true,
       activeAlbum: null,
+      activeSource: null,
       screen: "Library",
       busy: false,
       progress: null,
@@ -216,15 +235,16 @@ export const useLibraryStore = create<LibraryState>()(
             return;
           }
           
-          const [items, albums, tags] = await Promise.all([
+          const [items, albums, tags, folders] = await Promise.all([
             tauri.library.getItems(dto || {}),
             tauri.albums.get(),
             tauri.albums.getTags(),
+            tauri.library.getFolders(),
           ]);
           
           console.log("loadLibrary: got items", { itemsCount: items.length, albumsCount: albums.length, tagsCount: tags.length });
           
-          set({ items, albums, tags, busy: false, progress: null });
+          set({ items, albums, tags, folders, busy: false, progress: null });
           get().refreshDerived();
         } catch (e) {
           console.error("loadLibrary failed:", e);
@@ -234,6 +254,47 @@ export const useLibraryStore = create<LibraryState>()(
 
       importFolder: async () => {
         // Implemented in App.tsx via dialog
+      },
+
+      loadFolders: async () => {
+        const isTauri = typeof window !== "undefined" && ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
+        if (!isTauri) return;
+        try {
+          const folders = await tauri.library.getFolders();
+          set({ folders });
+        } catch (e) {
+          console.error("loadFolders failed:", e);
+        }
+      },
+
+      // Removing a folder only touches the catalog unless the caller asks for
+      // the originals to be trashed as well.
+      removeFolder: async (path, deleteFiles = false) => {
+        const removed = await tauri.library.removeFolder(path, deleteFiles);
+
+        const prefix = path.endsWith("/") ? path : `${path}/`;
+        const removedIds = new Set(
+          get()
+            .items.filter((item) => item.path === path || item.path.startsWith(prefix))
+            .map((item) => item.id),
+        );
+
+        set((s) => ({
+          items: s.items.filter((item) => !removedIds.has(item.id)),
+          selectedIds: s.selectedIds.filter((id) => !removedIds.has(id)),
+          // Never leave inspection pointing at an item that no longer exists.
+          inspectedId: s.inspectedId && removedIds.has(s.inspectedId) ? null : s.inspectedId,
+          folders: s.folders.filter((folder) => folder.path !== path),
+          // Drop a source filter that pointed into the removed folder.
+          activeSource:
+            s.activeSource === path || (s.activeSource && s.activeSource.startsWith(prefix))
+              ? null
+              : s.activeSource,
+        }));
+        get().refreshDerived();
+        await get().loadFolders();
+
+        return removed;
       },
 
       importFiles: async () => {
@@ -332,6 +393,14 @@ export const useLibraryStore = create<LibraryState>()(
         get().refreshDerived();
       },
 
+      setActiveSource: (path) => {
+        // Toggle off when the active source is clicked again; picking a source
+        // leaves any album so the two scopes never stack invisibly.
+        const next = get().activeSource === path ? null : path;
+        set({ activeSource: next, activeAlbum: null });
+        get().refreshDerived();
+      },
+
       setQuery: (query) => {
         set({ query });
         get().refreshDerived();
@@ -345,7 +414,7 @@ export const useLibraryStore = create<LibraryState>()(
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
 
       setActiveAlbum: (albumId) => {
-        set({ activeAlbum: albumId, filter: "All" });
+        set({ activeAlbum: albumId, filter: "All", activeSource: null });
         get().refreshDerived();
       },
 

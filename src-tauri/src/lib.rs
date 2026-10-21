@@ -149,6 +149,8 @@ pub fn run() {
             get_item_thumbnail,
             watch_folder,
             unwatch_folder,
+            get_library_folders,
+            remove_library_folder,
             // Items
             toggle_favorite,
             toggle_hidden,

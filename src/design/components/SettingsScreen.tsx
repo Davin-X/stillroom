@@ -331,6 +331,7 @@ function GeneralPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Sidebar Width</b>
+            <span className="settings-row-desc">Adjust the navigation sidebar size</span>
           </div>
           <div className="settings-row-control" style={{ alignItems: "center" }}>
             <input
@@ -364,6 +365,7 @@ function GeneralPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Animate Transitions</b>
+            <span className="settings-row-desc">Smooth animations for navigation and zoom</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -399,6 +401,7 @@ function GeneralPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Open Last Library Folder</b>
+            <span className="settings-row-desc">Automatically load the last opened folder</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -414,6 +417,7 @@ function GeneralPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Restore Window State</b>
+            <span className="settings-row-desc">Remember window size, position, and sidebar width</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -451,6 +455,7 @@ function ViewingPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Default Layout</b>
+            <span className="settings-row-desc">Starting layout when opening the library</span>
           </div>
           <div className="settings-row-control">
             {props.renderRadioGroup("layout", props.defaultLayout, LAYOUT_OPTIONS, (v: string) => props.onChange("defaultLayout", v))}
@@ -459,6 +464,7 @@ function ViewingPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Thumbnail Size</b>
+            <span className="settings-row-desc">Default thumbnail dimensions in grid view</span>
           </div>
           <div className="settings-row-control">
             <select
@@ -479,6 +485,7 @@ function ViewingPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Interval</b>
+            <span className="settings-row-desc">Seconds between slides</span>
           </div>
           <div className="settings-row-control" style={{ alignItems: "center" }}>
             <input
@@ -496,6 +503,7 @@ function ViewingPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Shuffle</b>
+            <span className="settings-row-desc">Randomize slide order</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -511,6 +519,7 @@ function ViewingPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Loop</b>
+            <span className="settings-row-desc">Restart from beginning when reaching the end</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -532,6 +541,7 @@ function ViewingPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Auto-play</b>
+            <span className="settings-row-desc">Start playing videos when opened in viewer</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -547,6 +557,7 @@ function ViewingPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Loop Videos</b>
+            <span className="settings-row-desc">Restart video when it ends</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -581,6 +592,7 @@ function LibraryPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Auto-import New Files</b>
+            <span className="settings-row-desc">Automatically add files when dropped or saved to watched folders</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -596,6 +608,7 @@ function LibraryPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Pair RAW + JPEG</b>
+            <span className="settings-row-desc">Group RAW and JPEG files shot together as a single item</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -611,6 +624,7 @@ function LibraryPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Stack Burst Photos</b>
+            <span className="settings-row-desc">Group rapid-sequence shots (burst mode) into stacks</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -657,6 +671,7 @@ function PrivacyPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Enable Vault</b>
+            <span className="settings-row-desc">Encrypt hidden items with Secure Enclave. Requires Touch ID or password to unlock.</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -672,6 +687,7 @@ function PrivacyPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Unlock Method</b>
+            <span className="settings-row-desc">How to authenticate when opening the vault</span>
           </div>
           <div className="settings-row-control">
             {props.renderRadioGroup("vaultMethod", props.vaultMethod, VAULT_METHODS, (v: string) => props.onChange("vaultUnlockMethod", v))}
@@ -680,6 +696,7 @@ function PrivacyPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Auto-lock After</b>
+            <span className="settings-row-desc">Minutes of inactivity before vault locks automatically</span>
           </div>
           <div className="settings-row-control" style={{ alignItems: "center" }}>
             <input
@@ -699,6 +716,7 @@ function PrivacyPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Lock on Sleep</b>
+            <span className="settings-row-desc">Lock vault when Mac sleeps or screen saver starts</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -721,6 +739,7 @@ function PrivacyPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Strip GPS Location</b>
+            <span className="settings-row-desc">Remove location data from exported copies</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -736,6 +755,7 @@ function PrivacyPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Strip All Metadata</b>
+            <span className="settings-row-desc">Remove EXIF, camera info, and all metadata from exports</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -757,6 +777,7 @@ function PrivacyPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Network Access</b>
+            <span className="settings-row-desc">Allow any network connections (updates, crash reports)</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -773,6 +794,7 @@ function PrivacyPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Crash Reports</b>
+            <span className="settings-row-desc">Automatically send anonymous crash reports to help improve Stillroom</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -864,6 +886,7 @@ function AdvancedPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Debug Logging</b>
+            <span className="settings-row-desc">Verbose logs in Console.app for troubleshooting</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -879,6 +902,7 @@ function AdvancedPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Show Native Limit Warnings</b>
+            <span className="settings-row-desc">Display notices when browser preview lacks native features</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -898,6 +922,10 @@ function AdvancedPanel(props: {
           <TrashIcon size={14} /> Danger Zone
         </h2>
         <div className="settings-row">
+          <div className="settings-row-label">
+            <b>Reset All Settings</b>
+            <span className="settings-row-desc">Restores all settings to defaults</span>
+          </div>
           <div className="settings-row-control">
             <button className="danger-button" type="button" onClick={() => props.setShowResetConfirm(true)}>
               Reset All Settings
@@ -905,6 +933,10 @@ function AdvancedPanel(props: {
           </div>
         </div>
         <div className="settings-row">
+          <div className="settings-row-label">
+            <b>Delete Library Database</b>
+            <span className="settings-row-desc">Removes catalog, albums, tags. Original files unaffected.</span>
+          </div>
           <div className="settings-row-control">
             <button className="danger-button" type="button" onClick={() => props.setShowDeleteConfirm(true)}>
               Delete Library Database

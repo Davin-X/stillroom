@@ -37,6 +37,19 @@
   cursor: pointer;
   transition: color 0.15s ease, border-color 0.15s ease;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-tab-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: inherit;
+}
+
+.settings-tab-label {
+  display: inline-flex;
 }
 
 .settings-tab:hover {
@@ -598,6 +611,11 @@
 .sources-summary-dot {
   padding: 0 6px;
   color: var(--faint);
+}
+
+/* Space between the summary bar (with add button) and the table */
+.sources-summary + .sources-table {
+  margin-top: 8px;
 }
 
 .sources-table {

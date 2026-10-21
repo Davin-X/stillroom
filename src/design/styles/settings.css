@@ -4,6 +4,14 @@
   max-width: 880px;
   margin: 0 auto;
   padding: 32px 40px 48px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.settings-page .settings-tabs {
+  flex-shrink: 0;
 }
 
 .settings-tabs {
@@ -11,7 +19,8 @@
   gap: 0;
   border-bottom: 1px solid var(--line);
   margin-bottom: 28px;
-  overflow-x: auto;
+  overflow: clip;
+  flex-shrink: 0;
 }
 
 .settings-tab {
@@ -48,6 +57,27 @@
 
 .settings-panel {
   animation: fadeInUp 0.15s ease;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+.settings-panel::-webkit-scrollbar {
+  width: 8px;
+}
+
+.settings-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.settings-panel::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 4px;
+}
+
+.settings-panel::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
 }
 
 @keyframes fadeInUp {

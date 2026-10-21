@@ -802,3 +802,167 @@
 .sources-sheet .dialog-actions {
   margin-top: 16px;
 }
+
+/* ===== Responsive ===== */
+
+@media (max-width: 960px) {
+  .settings-page {
+    padding: 24px 20px 32px;
+    max-width: 100%;
+  }
+
+  .settings-tabs {
+    margin-bottom: 20px;
+  }
+
+  .settings-tab {
+    min-width: 80px;
+    max-width: none;
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  .settings-tab-icon {
+    display: none;
+  }
+
+  .settings-section {
+    margin-bottom: 28px;
+  }
+
+  .settings-section-title {
+    margin-bottom: 14px;
+    font-size: 13px;
+  }
+
+  .settings-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 12px 0;
+  }
+
+  .settings-row-label {
+    font-size: 12px;
+  }
+
+  .settings-row-control {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .settings-slider {
+    max-width: none;
+    width: 100%;
+  }
+
+  .settings-select {
+    max-width: none;
+    width: 100%;
+  }
+
+  .radio-group {
+    gap: 12px;
+  }
+
+  .accent-picker {
+    gap: 6px;
+  }
+
+  .accent-option {
+    width: 28px;
+    height: 28px;
+  }
+
+  .settings-warning {
+    padding: 12px 14px;
+    font-size: 12px;
+  }
+
+  .sources-table {
+    font-size: 11px;
+  }
+
+  .sources-table th,
+  .sources-table td {
+    padding: 8px 10px;
+  }
+
+  .sources-summary {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .sources-summary-text {
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 640px) {
+  .settings-page {
+    padding: 16px 12px 24px;
+  }
+
+  .settings-tabs {
+    gap: 4px;
+    margin-bottom: 16px;
+  }
+
+  .settings-tab {
+    min-width: 70px;
+    padding: 8px 10px;
+    font-size: 11px;
+  }
+
+  .settings-section-title {
+    font-size: 12px;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+  }
+
+  .settings-row {
+    padding: 10px 0;
+  }
+
+  .settings-row-label b {
+    font-size: 12px;
+  }
+
+  .settings-row-desc {
+    font-size: 11px;
+  }
+
+  .quick-filter {
+    padding: 0 6px;
+    font-size: 11px;
+  }
+
+  .select-all-toggle {
+    min-width: 80px;
+    padding: 0 8px;
+  }
+
+  .sources-table {
+    font-size: 10px;
+  }
+
+  .sources-table th,
+  .sources-table td {
+    padding: 6px 8px;
+  }
+
+  .dialog-body {
+    font-size: 12px;
+  }
+
+  .dialog-actions {
+    gap: 8px;
+  }
+
+  .dialog-actions .primary-button,
+  .dialog-actions .quiet-button,
+  .dialog-actions .danger-button {
+    min-width: 80px;
+    padding: 0 12px;
+  }
+}

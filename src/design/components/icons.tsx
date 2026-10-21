@@ -413,4 +413,12 @@ export function LockIcon({ size = 13, className = "", strokeWidth = 1.9 }: IconP
   );
 }
 
+export function CheckIcon({ size = 14, className = "", strokeWidth = 2.2 }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={strokeWidth}>
+      <path d="M4.5 12.5l4.5 4.5 7.5-7.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
 export default GearIcon;

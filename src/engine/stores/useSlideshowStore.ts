@@ -1,128 +1,114 @@
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 import type { MediaItem } from "../types/media";
-import { useLibraryStore } from "./useLibraryStore";
+
+export type SlideshowTransition = "fade" | "slide" | "none";
 
 interface SlideshowState {
-  // State
+  // A slideshow is an overlay session, not a screen. It owns its item list so
+  // playing never mutates the library's selection or inspection state, and the
+  // timer can be torn down cleanly when the overlay closes.
+  isOpen: boolean;
+  items: MediaItem[];
+  index: number;
   playing: boolean;
-  interval: number;        // seconds
+  interval: number; // seconds
   shuffle: boolean;
-  transition: "fade" | "slide" | "none";
-  currentItem: MediaItem | null;
+  transition: SlideshowTransition;
 
-  // Actions
-  start: () => void;
-  stop: () => void;
-  toggle: () => void;
+  open: (items: MediaItem[], startId?: string | null) => void;
+  close: () => void;
   next: () => void;
   previous: () => void;
+  toggle: () => void;
   setInterval: (seconds: number) => void;
   setShuffle: (shuffle: boolean) => void;
-  setTransition: (transition: "fade" | "slide" | "none") => void;
+  setTransition: (transition: SlideshowTransition) => void;
 }
 
 let slideshowTimer: ReturnType<typeof setInterval> | null = null;
 
+function clearTimer() {
+  if (slideshowTimer) {
+    clearInterval(slideshowTimer);
+    slideshowTimer = null;
+  }
+}
+
+// Single timer owner: always clear before scheduling, so opening/restarting a
+// slideshow can never stack intervals that outlive the overlay.
+function schedule() {
+  clearTimer();
+  const { isOpen, playing, items, interval } = useSlideshowStore.getState();
+  if (!isOpen || !playing || items.length < 2) return;
+  slideshowTimer = setInterval(() => {
+    const state = useSlideshowStore.getState();
+    if (!state.isOpen || !state.playing) return;
+    state.next();
+  }, Math.max(1, interval) * 1000);
+}
+
 export const useSlideshowStore = create<SlideshowState>()(
   devtools(
     (set, get) => ({
+      isOpen: false,
+      items: [],
+      index: 0,
       playing: false,
       interval: 5,
       shuffle: false,
       transition: "fade",
-      currentItem: null,
 
-      start: () => {
-        const { playableItems, inspectedId } = useLibraryStore.getState();
-        if (playableItems.length === 0) return;
-
-        // Never stack timers. Clicking the Slideshow nav again (or re-entering
-        // the screen) used to create a second interval while the old one kept
-        // running: each leaked timer called navigatePhoto → refreshDerived and
-        // re-rendered the whole app every few seconds.
-        if (slideshowTimer) {
-          clearInterval(slideshowTimer);
-          slideshowTimer = null;
-        }
-        
-        const current = playableItems.find((i) => i.id === inspectedId) || playableItems[0];
-        set({ playing: true, currentItem: current });
-        
-        // Set initial inspection target (selection is left alone)
-        if (!inspectedId && playableItems[0]) {
-          useLibraryStore.getState().inspectItem(playableItems[0].id);
-        }
-        
-        if (playableItems.length >= 2) {
-          slideshowTimer = setInterval(() => {
-            // Defensive: a timer that somehow outlives stop() must not keep
-            // driving the library.
-            if (!get().playing) return;
-            const { shuffle } = get();
-            if (shuffle) {
-              const { playableItems: items, inspectedId: currentId } = useLibraryStore.getState();
-              const candidates = items.filter((i) => i.id !== currentId);
-              if (candidates.length) {
-                const randomIndex = Math.floor(Math.random() * candidates.length);
-                const targetItem = candidates[randomIndex];
-                useLibraryStore.getState().inspectItem(targetItem.id);
-              }
-            } else {
-              useLibraryStore.getState().navigatePhoto(1);
-            }
-            const { playableItems: items, inspectedId: currentId } = useLibraryStore.getState();
-            const currentItem = items.find((i) => i.id === currentId);
-            if (currentItem) set({ currentItem });
-          }, get().interval * 1000);
-        }
+      open: (items, startId) => {
+        if (items.length === 0) return;
+        const start = startId ? items.findIndex((item) => item.id === startId) : -1;
+        set({ isOpen: true, items, index: start >= 0 ? start : 0, playing: true });
+        schedule();
       },
 
-      stop: () => {
-        if (slideshowTimer) {
-          clearInterval(slideshowTimer);
-          slideshowTimer = null;
-        }
-        set({ playing: false });
-      },
-
-      toggle: () => {
-        if (get().playing) get().stop(); else get().start();
+      close: () => {
+        clearTimer();
+        set({ isOpen: false, items: [], index: 0, playing: false });
       },
 
       next: () => {
-        useLibraryStore.getState().navigatePhoto(1);
-        const { playableItems, inspectedId } = useLibraryStore.getState();
-        const current = playableItems.find((i) => i.id === inspectedId);
-        if (current) set({ currentItem: current });
+        const { items, index, shuffle } = get();
+        if (items.length < 2) return;
+        let nextIndex = index;
+        if (shuffle) {
+          while (nextIndex === index) nextIndex = Math.floor(Math.random() * items.length);
+        } else {
+          nextIndex = (index + 1) % items.length;
+        }
+        set({ index: nextIndex });
       },
 
       previous: () => {
-        useLibraryStore.getState().navigatePhoto(-1);
-        const { playableItems, inspectedId } = useLibraryStore.getState();
-        const current = playableItems.find((i) => i.id === inspectedId);
-        if (current) set({ currentItem: current });
+        const { items, index } = get();
+        if (items.length < 2) return;
+        set({ index: (index - 1 + items.length) % items.length });
       },
 
-      setInterval: (seconds) => set({ interval: Math.max(1, Math.min(60, seconds)) }),
+      toggle: () => {
+        const playing = !get().playing;
+        set({ playing });
+        if (playing) schedule();
+        else clearTimer();
+      },
+
+      setInterval: (seconds) => {
+        set({ interval: Math.max(1, Math.min(60, seconds)) });
+        if (get().isOpen && get().playing) schedule();
+      },
 
       setShuffle: (shuffle) => set({ shuffle }),
-
       setTransition: (transition) => set({ transition }),
     }),
     { name: "slideshow-store" }
   )
 );
 
-// Cleanup on unmount
+// Cleanup on unload (the timer lives outside React).
 if (typeof window !== "undefined") {
-  window.addEventListener("beforeunload", () => {
-    if (slideshowTimer) clearInterval(slideshowTimer);
-  });
+  window.addEventListener("beforeunload", clearTimer);
 }
-
-export const useSlideshowPlaying = () => useSlideshowStore((s) => s.playing);
-export const useSlideshowInterval = () => useSlideshowStore((s) => s.interval);
-export const useSlideshowShuffle = () => useSlideshowStore((s) => s.shuffle);
-export const useSlideshowTransition = () => useSlideshowStore((s) => s.transition);
-export const useSlideshowCurrentItem = () => useSlideshowStore((s) => s.currentItem);

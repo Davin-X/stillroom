@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useSettingsStore, useAppearance, useAccentColor, useSidebarWidth, useDefaultLayout, applyTheme } from "../../engine/stores";
+import type { LibraryFolder } from "../../engine/types/commands";
+import { SourcesManager } from "./SourcesManager";
 import { LockIcon } from "./icons";
 
 type SettingsTab = "general" | "viewing" | "library" | "privacy" | "advanced";
@@ -45,7 +47,10 @@ const VAULT_METHODS = [
   { id: "touchid", label: "Touch ID Only" },
 ] as const;
 
-export function SettingsScreen() {
+export function SettingsScreen(props: {
+  onAddFolder?: () => void;
+  onRemoveFolder?: (folder: LibraryFolder) => void;
+}) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
   const [sidebarWidth, setSidebarWidthState] = useState(220);
   
@@ -201,6 +206,8 @@ export function SettingsScreen() {
           autoImport={autoImport}
           pairRawJpeg={pairRawJpeg}
           stackBursts={stackBursts}
+          onAddFolder={props.onAddFolder}
+          onRemoveFolder={props.onRemoveFolder}
           onChange={update}
         />}
         {activeTab === "privacy" && <PrivacyPanel
@@ -511,6 +518,8 @@ function LibraryPanel(props: {
   autoImport: boolean;
   pairRawJpeg: boolean;
   stackBursts: boolean;
+  onAddFolder?: () => void;
+  onRemoveFolder?: (folder: LibraryFolder) => void;
   onChange: (key: any, value: any) => void;
 }) {
   return (
@@ -567,23 +576,16 @@ function LibraryPanel(props: {
         </div>
       </section>
 
-      <section className="settings-section">
-        <h2 className="settings-section-title">Watched Folders</h2>
-        <div className="settings-row">
-          <div className="settings-row-label">
-            <b>Managed Folders</b>
-            <span className="settings-row-desc">Folders Stillroom watches for changes. Requires Full Disk Access in System Settings.</span>
-          </div>
-          <div className="settings-row-control">
-            <button className="primary-button" type="button">Add Folder…</button>
-            <button className="quiet-button" type="button">Open System Settings</button>
-          </div>
-        </div>
-        <div className="settings-warning">
-          <span className="settings-warning-icon">⚠</span>
-          <span>Folder watching requires granting Full Disk Access in System Settings → Privacy & Security. Without it, Stillroom can only import files you explicitly select.</span>
-        </div>
-      </section>
+      <SourcesManager
+        variant="inline"
+        onAddFolder={props.onAddFolder}
+        onRemoveFolder={props.onRemoveFolder}
+      />
+
+      <div className="settings-warning">
+        <span className="settings-warning-icon">⚠</span>
+        <span>Folder watching requires granting Full Disk Access in System Settings → Privacy & Security. Without it, Stillroom can only import files you explicitly select.</span>
+      </div>
     </>
   );
 }

@@ -36,6 +36,15 @@ export const useSlideshowStore = create<SlideshowState>()(
       start: () => {
         const { playableItems, inspectedId } = useLibraryStore.getState();
         if (playableItems.length === 0) return;
+
+        // Never stack timers. Clicking the Slideshow nav again (or re-entering
+        // the screen) used to create a second interval while the old one kept
+        // running: each leaked timer called navigatePhoto → refreshDerived and
+        // re-rendered the whole app every few seconds.
+        if (slideshowTimer) {
+          clearInterval(slideshowTimer);
+          slideshowTimer = null;
+        }
         
         const current = playableItems.find((i) => i.id === inspectedId) || playableItems[0];
         set({ playing: true, currentItem: current });
@@ -47,6 +56,9 @@ export const useSlideshowStore = create<SlideshowState>()(
         
         if (playableItems.length >= 2) {
           slideshowTimer = setInterval(() => {
+            // Defensive: a timer that somehow outlives stop() must not keep
+            // driving the library.
+            if (!get().playing) return;
             const { shuffle } = get();
             if (shuffle) {
               const { playableItems: items, inspectedId: currentId } = useLibraryStore.getState();

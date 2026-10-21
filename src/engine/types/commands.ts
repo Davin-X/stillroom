@@ -141,6 +141,17 @@ export interface ThumbnailReadyEvent {
   dataUrl: string;
 }
 
+/**
+ * A folder the library is made of. `itemCount`/`totalSize` are computed from
+ * the catalog, not stored, so they always match what the grid shows.
+ */
+export interface LibraryFolder {
+  path: string;
+  name: string;
+  itemCount: number;
+  totalSize: number;
+}
+
 // Tauri Command Signatures (for type-safe invoke)
 // Using a mapped type for command signatures
 export type TauriCommandSignature = {
@@ -151,6 +162,8 @@ export type TauriCommandSignature = {
   get_item_thumbnail: (request: ThumbnailRequest) => ThumbnailResponse;
   watch_folder: (path: string) => void;
   unwatch_folder: (path: string) => void;
+  get_library_folders: () => LibraryFolder[];
+  remove_library_folder: (path: string, deleteFiles?: boolean) => number;
 
   // Items
   toggle_favorite: (itemId: string, favorite: boolean) => void;

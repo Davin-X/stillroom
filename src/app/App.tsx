@@ -1,5 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback, memo } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import React, { useEffect, useRef, useState, useCallback, useMemo, memo } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { currentMonitor, getCurrentWindow, LogicalSize, PhysicalPosition } from "@tauri-apps/api/window";
@@ -28,7 +27,9 @@ function KindIcon({ kind, size = 14 }: { kind: "photo" | "video" | "raw"; size?:
   return <span dangerouslySetInnerHTML={{ __html: getKindIcon(kind, 14) }} />;
 }
 import type { MediaItem, MediaKind, Filter } from "../engine/types/media";
+import type { LibraryFolder } from "../engine/types/commands";
 import { SettingsScreen } from "../design/components/SettingsScreen";
+import { SourcesManager } from "../design/components/SourcesManager";
 import { ContextMenu } from "../design/components/ContextMenu";
 import { BrandMark } from "../design/components/BrandMark";
 import { GearIcon, SunIcon, MoonIcon, LibraryIcon, AlbumsIcon, ViewerIcon, ExploreIcon, DuplicatesIcon, EditIcon, BatchIcon, VaultIcon, SlideshowIcon, SearchIcon, PlusIcon, MinusIcon, MoreIcon, InspectorIcon, FolderIcon, GridIcon, OverviewIcon, ColumnsIcon, DetailsIcon, TimelineIcon, HeartIcon, EyeIcon, EyeOffIcon, FullscreenIcon, RotateIcon, CropIcon, FlipIcon, PlayIcon, PauseIcon, StopIcon, SparkleIcon, UsersIcon, TagIcon, ImageOffIcon, LockIcon, ShareIcon } from "../design/components/icons";
@@ -82,6 +83,12 @@ function App() {
   const [albumPendingDelete, setAlbumPendingDelete] = useState<any | null>(null);
   const [deletingAlbum, setDeletingAlbum] = useState(false);
 
+  // Removing a folder is confirmed through its own dialog so a stray click in
+  // the sidebar can never drop a chunk of the library.
+  const [folderPendingRemove, setFolderPendingRemove] = useState<LibraryFolder | null>(null);
+  const [removingFolder, setRemovingFolder] = useState(false);
+  const [sourcesSheetOpen, setSourcesSheetOpen] = useState(false);
+
   const [albumPickerOpen, setAlbumPickerOpen] = useState(false);
   const [albumPickerItemIds, setAlbumPickerItemIds] = useState<string[]>([]);
   const [albumSearch, setAlbumSearch] = useState("");
@@ -114,6 +121,26 @@ function App() {
   }, []);
 
   const library = useLibraryStore();
+
+  // Sidebar summary in one pass. The rows used to run a filter + reduce over
+  // the whole library each, i.e. a dozen scans per render, which is costly at
+  // 10k+ items and made every unrelated state change feel slow.
+  const libraryStats = useMemo(() => {
+    const stats = {
+      photos: 0, videos: 0, raws: 0, favorites: 0, hidden: 0,
+      photoSize: 0, videoSize: 0, rawSize: 0, favoriteSize: 0, hiddenSize: 0, totalSize: 0,
+    };
+    for (const item of library.items) {
+      stats.totalSize += item.size;
+      if (item.hidden) { stats.hidden += 1; stats.hiddenSize += item.size; }
+      if (item.favorite) { stats.favorites += 1; stats.favoriteSize += item.size; }
+      if (item.kind === "photo") { stats.photos += 1; stats.photoSize += item.size; }
+      else if (item.kind === "video") { stats.videos += 1; stats.videoSize += item.size; }
+      else if (item.kind === "raw") { stats.raws += 1; stats.rawSize += item.size; }
+    }
+    return stats;
+  }, [library.items]);
+
   const viewer = useViewerStore();
   const edit = useEditStore();
   const vault = useVaultStore();
@@ -133,6 +160,15 @@ function App() {
       viewer.open();
     }
   }, [screen, viewer.isOpen, viewer.close, viewer.open]);
+
+  // A slideshow only exists while its screen is visible. Navigation can also
+  // happen outside openScreen (viewer, keyboard shortcuts), so stop it here
+  // as a single source of truth.
+  useEffect(() => {
+    if (screen !== "Slideshow" && slideshow.playing) {
+      slideshow.stop();
+    }
+  }, [screen, slideshow.playing, slideshow.stop]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -301,8 +337,8 @@ function App() {
   }, []);
 
   // Latest render values, so long-lived event handlers never read stale stores.
-  const liveRef = useRef({ library, viewer, edit, settings, vault, screen, albumDialogOpen, albumPickerOpen, albumPendingDelete });
-  liveRef.current = { library, viewer, edit, settings, vault, screen, albumDialogOpen, albumPickerOpen, albumPendingDelete };
+  const liveRef = useRef({ library, viewer, edit, settings, vault, screen, albumDialogOpen, albumPickerOpen, albumPendingDelete, folderPendingRemove, sourcesSheetOpen });
+  liveRef.current = { library, viewer, edit, settings, vault, screen, albumDialogOpen, albumPickerOpen, albumPendingDelete, folderPendingRemove, sourcesSheetOpen };
 
   // Handlers are declared further down; stable listeners reach them through a ref.
   const handlersRef = useRef<{
@@ -355,13 +391,13 @@ function App() {
 
     // Keyboard shortcuts
     const handleKeyDown = (e: KeyboardEvent) => {
-      const { library, viewer, screen, albumDialogOpen, albumPickerOpen, albumPendingDelete } = liveRef.current;
+      const { library, viewer, screen, albumDialogOpen, albumPickerOpen, albumPendingDelete, folderPendingRemove, sourcesSheetOpen } = liveRef.current;
       const mod = e.metaKey || e.ctrlKey;
       const key = e.key.toLowerCase();
 
       // While a modal is open, every key belongs to it (the dialogs own Enter
       // and Escape) instead of the global shortcut map.
-      if (albumDialogOpen || albumPickerOpen || albumPendingDelete) return;
+      if (albumDialogOpen || albumPickerOpen || albumPendingDelete || folderPendingRemove || sourcesSheetOpen) return;
 
       if (mod && key === "o") { e.preventDefault(); handlersRef.current.importFolder(); return; }
       if (mod && key === "i") { e.preventDefault(); handlersRef.current.importFiles(); return; }
@@ -610,6 +646,48 @@ function App() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [albumPendingDelete, deletingAlbum]);
+
+  const confirmRemoveFolder = async () => {
+    if (!folderPendingRemove || removingFolder) return;
+    setRemovingFolder(true);
+    try {
+      const removed = await library.removeFolder(folderPendingRemove.path);
+      showNotice(
+        removed > 0
+          ? `Removed “${folderPendingRemove.name}” from Stillroom. ${removed.toLocaleString()} item${removed === 1 ? "" : "s"} dropped from the library — your files are still on disk.`
+          : `Removed empty folder “${folderPendingRemove.name}” from Stillroom.`
+      );
+      setFolderPendingRemove(null);
+    } catch (error) {
+      showNotice(`Could not remove folder: ${describeError(error)}`);
+    } finally {
+      setRemovingFolder(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!folderPendingRemove) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      if (!removingFolder) setFolderPendingRemove(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [folderPendingRemove, removingFolder]);
+
+  // The sources sheet owns Escape unless the remove-confirmation is stacked on
+  // top of it (that dialog has its own handler above).
+  useEffect(() => {
+    if (!sourcesSheetOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || folderPendingRemove) return;
+      e.preventDefault();
+      setSourcesSheetOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [sourcesSheetOpen, folderPendingRemove]);
 
   const importPathsIntoAlbum = async (paths: string[], albumId: string) => {
     const album = library.albums.find((a: any) => a.id === albumId);
@@ -939,6 +1017,28 @@ handlersRef.current = { importFolder, importFiles, showNotice };
 
           <div className="sidebar-divider" aria-hidden="true" />
 
+          <div className="sidebar-section sources-entry-section">
+            <button
+              type="button"
+              className="sources-entry"
+              onClick={() => setSourcesSheetOpen(true)}
+              title="Manage library sources"
+            >
+              <span className="sources-entry-icon"><FolderIcon size={16} /></span>
+              <span className="sources-entry-text">
+                <span className="sources-entry-name">All Sources</span>
+                <span className="sources-entry-count">
+                  {library.folders.length.toLocaleString()} folder{library.folders.length === 1 ? "" : "s"}
+                  {" · "}
+                  {library.folders.reduce((total: number, folder: LibraryFolder) => total + folder.itemCount, 0).toLocaleString()} items
+                </span>
+              </span>
+              <span className="sources-entry-chevron" aria-hidden="true">›</span>
+            </button>
+          </div>
+
+          <div className="sidebar-divider" aria-hidden="true" />
+
           <div className="sidebar-section">
             <div className="sidebar-section-label">LIBRARY</div>
             <div className="library-stats">
@@ -946,46 +1046,46 @@ handlersRef.current = { importFolder, importFiles, showNotice };
                 <KindDot kind="photo" />
                 <span className="stat-label">Photos</span>
                 <span className="stat-value">
-                  {library.items.filter((i: any) => i.kind === 'photo').length.toLocaleString()}
-                  <span className="stat-size">· {formatBytesSimple(library.items.filter((i: any) => i.kind === 'photo').reduce((t: number, i: any) => t + i.size, 0))}</span>
+                  {libraryStats.photos.toLocaleString()}
+                  <span className="stat-size">· {formatBytesSimple(libraryStats.photoSize)}</span>
                 </span>
               </div>
               <div className="stat-row">
                 <KindDot kind="video" />
                 <span className="stat-label">Videos</span>
                 <span className="stat-value">
-                  {library.items.filter((i: any) => i.kind === 'video').length.toLocaleString()}
-                  <span className="stat-size">· {formatBytesSimple(library.items.filter((i: any) => i.kind === 'video').reduce((t: number, i: any) => t + i.size, 0))}</span>
+                  {libraryStats.videos.toLocaleString()}
+                  <span className="stat-size">· {formatBytesSimple(libraryStats.videoSize)}</span>
                 </span>
               </div>
               <div className="stat-row">
                 <KindDot kind="raw" />
                 <span className="stat-label">RAW</span>
                 <span className="stat-value">
-                  {library.items.filter((i: any) => i.kind === 'raw').length.toLocaleString()}
-                  <span className="stat-size">· {formatBytesSimple(library.items.filter((i: any) => i.kind === 'raw').reduce((t: number, i: any) => t + i.size, 0))}</span>
+                  {libraryStats.raws.toLocaleString()}
+                  <span className="stat-size">· {formatBytesSimple(libraryStats.rawSize)}</span>
                 </span>
               </div>
               <div className="stat-row">
                 <KindDot kind="photo" />
                 <span className="stat-label">Favorites</span>
                 <span className="stat-value">
-                  {library.items.filter((i: any) => i.favorite).length.toLocaleString()}
-                  <span className="stat-size">· {formatBytesSimple(library.items.filter((i: any) => i.favorite).reduce((t: number, i: any) => t + i.size, 0))}</span>
+                  {libraryStats.favorites.toLocaleString()}
+                  <span className="stat-size">· {formatBytesSimple(libraryStats.favoriteSize)}</span>
                 </span>
               </div>
               <div className="stat-row hidden">
                 <KindDot kind="photo" />
                 <span className="stat-label">Hidden</span>
                 <span className="stat-value">
-                  {library.hiddenCount.toLocaleString()}
-                  <span className="stat-size">· {formatBytesSimple(library.items.filter((i: any) => i.hidden).reduce((t: number, i: any) => t + i.size, 0))}</span>
+                  {libraryStats.hidden.toLocaleString()}
+                  <span className="stat-size">· {formatBytesSimple(libraryStats.hiddenSize)}</span>
                 </span>
               </div>
               <div className="stat-row size">
                 <span className="stat-label">Total</span>
                 <span className="stat-value">
-                  {library.items.length.toLocaleString()} · {formatBytesSimple(library.items.reduce((t: number, i: any) => t + i.size, 0))}
+                  {library.items.length.toLocaleString()} · {formatBytesSimple(libraryStats.totalSize)}
                 </span>
               </div>
             </div>
@@ -1162,7 +1262,10 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             assetUrl={assetUrl}
           />}
 
-          {screen === "Settings" && <SettingsScreen />}
+          {screen === "Settings" && <SettingsScreen
+            onAddFolder={() => importFolder()}
+            onRemoveFolder={(folder: LibraryFolder) => setFolderPendingRemove(folder)}
+          />}
         </main>
       </div>
 
@@ -1447,6 +1550,117 @@ handlersRef.current = { importFolder, importFiles, showNotice };
         </div>
       )}
 
+      {sourcesSheetOpen && (
+        <div
+          className="dialog-backdrop"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setSourcesSheetOpen(false);
+          }}
+        >
+          <div
+            className="album-dialog sources-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="sources-sheet-title"
+          >
+            <div className="dialog-heading">
+              <div>
+                <p className="eyebrow">LIBRARY</p>
+                <h2 id="sources-sheet-title">Sources</h2>
+              </div>
+              <button
+                type="button"
+                className="dialog-close"
+                aria-label="Close"
+                onClick={() => setSourcesSheetOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+            <SourcesManager
+              variant="sheet"
+              onAddFolder={() => importFolder()}
+              onRemoveFolder={(folder: LibraryFolder) => setFolderPendingRemove(folder)}
+            />
+            <div className="dialog-actions">
+              <button
+                type="button"
+                className="quiet-button"
+                onClick={() => setSourcesSheetOpen(false)}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {folderPendingRemove && (
+        <div
+          className="dialog-backdrop"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget && !removingFolder) setFolderPendingRemove(null);
+          }}
+        >
+          <div
+            className="album-dialog delete-album-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="remove-folder-title"
+            aria-describedby="remove-folder-description"
+          >
+            <div className="dialog-heading">
+              <div>
+                <p className="eyebrow">FOLDER</p>
+                <h2 id="remove-folder-title">Remove Folder?</h2>
+              </div>
+              <button
+                type="button"
+                className="dialog-close"
+                aria-label="Close"
+                onClick={() => setFolderPendingRemove(null)}
+                disabled={removingFolder}
+              >
+                ×
+              </button>
+            </div>
+            <p className="delete-album-copy">
+              Remove <b>“{folderPendingRemove.name}”</b> from Stillroom?
+            </p>
+            <div className="delete-album-safety" id="remove-folder-description">
+              <span><FolderIcon size={19} /></span>
+              <p>
+                <b>Your files are safe.</b>{" "}
+                {folderPendingRemove.itemCount > 0
+                  ? `This only unstages the folder and its ${folderPendingRemove.itemCount.toLocaleString()} item${folderPendingRemove.itemCount === 1 ? "" : "s"} from the library.`
+                  : "This only removes the empty folder entry from the library."}{" "}
+                Nothing is deleted from disk — import the folder again to bring it back.
+              </p>
+            </div>
+            <div className="dialog-actions">
+              <button
+                type="button"
+                className="quiet-button"
+                onClick={() => setFolderPendingRemove(null)}
+                disabled={removingFolder}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="danger-button"
+                onClick={confirmRemoveFolder}
+                disabled={removingFolder}
+              >
+                {removingFolder ? "Removing…" : "Remove Folder"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {contextMenu && (
         <ContextMenu
           items={contextMenu.items}
@@ -1603,6 +1817,10 @@ function formatDuration(seconds: number): string {
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 }
 
+// How many tiles to mount before the user scrolls further. Small enough to
+// keep filtering/typing snappy, large enough to fill a tall window.
+const GALLERY_PAGE_SIZE = 180;
+
 function LibraryScreen(props: any) {
   const library = useLibraryStore();
   const assetUrl = props.assetUrl;
@@ -1612,20 +1830,51 @@ function LibraryScreen(props: any) {
     : null;
   const activeAlbumName = props.activeAlbum ? activeAlbumRecord?.name ?? "Album" : null;
   const inAlbum = Boolean(props.activeAlbum);
-  const activeAlbumItems = props.activeAlbum
-    ? library.items.filter((item: any) => item.albumIds?.includes(props.activeAlbum))
-    : [];
-  const activeAlbumPhotos = activeAlbumItems
-    .filter((item: any) => item.kind === "photo" || item.kind === "video")
-    .slice(0, 3);
+  const activeAlbumItems = useMemo(
+    () => props.activeAlbum
+      ? library.items.filter((item: any) => item.albumIds?.includes(props.activeAlbum))
+      : [],
+    [library.items, props.activeAlbum],
+  );
+  const activeAlbumPhotos = useMemo(
+    () => activeAlbumItems
+      .filter((item: any) => item.kind === "photo" || item.kind === "video")
+      .slice(0, 3),
+    [activeAlbumItems],
+  );
   const activeAlbumCount = activeAlbumItems.length || activeAlbumRecord?.itemCount || 0;
   const albumEmpty = inAlbum && activeAlbumCount === 0;
   // Filter counts should describe the collection on screen, not the whole
-  // library while an album is open.
-  const filterSource = inAlbum ? activeAlbumItems : library.items;
+  // library while an album or a source is selected.
+  const sourceItems = useMemo(() => {
+    if (!library.activeSource) return library.items;
+    const prefix = `${library.activeSource.replace(/\/$/, "")}/`;
+    return library.items.filter(
+      (item: any) => item.path === library.activeSource || item.path.startsWith(prefix),
+    );
+  }, [library.items, library.activeSource]);
+  const filterSource = inAlbum ? activeAlbumItems : sourceItems;
+  // The SHOW row used to run one full filter pass per chip on every render.
+  // One pass keeps the counts in sync and is O(n) instead of 6 × O(n).
+  const filterCounts = useMemo(() => {
+    const counts = { All: 0, Photos: 0, Videos: 0, RAW: 0, Favorites: 0, Hidden: 0 };
+    for (const item of filterSource) {
+      if (item.hidden) {
+        counts.Hidden += 1;
+        continue;
+      }
+      counts.All += 1;
+      if (item.kind === "photo") counts.Photos += 1;
+      else if (item.kind === "video") counts.Videos += 1;
+      else if (item.kind === "raw") counts.RAW += 1;
+      if (item.favorite) counts.Favorites += 1;
+    }
+    return counts;
+  }, [filterSource]);
   const clearEmptyView = () => {
     props.onChangeQuery("");
     props.onChangeFilter("All");
+    library.setActiveSource(null);
   };
 
   const emptyView = () => (
@@ -1667,10 +1916,35 @@ function LibraryScreen(props: any) {
     </div>
   );
 
+  // Progressive rendering. A library can hold tens of thousands of items and
+  // mounting a tile for every one makes typing, clicking and filtering janky
+  // (the whole grid reconciles on each state change). Render a page at a time
+  // and extend it as the user scrolls, so the DOM stays small.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [renderLimit, setRenderLimit] = useState(GALLERY_PAGE_SIZE);
+
+  // A new view starts at the top of the list again.
+  useEffect(() => {
+    setRenderLimit(GALLERY_PAGE_SIZE);
+    scrollRef.current?.scrollTo({ top: 0 });
+  }, [props.filter, props.query, props.activeAlbum, library.activeSource, props.layout]);
+
+  const loadMore = () => {
+    setRenderLimit((n) => Math.min(n + GALLERY_PAGE_SIZE, props.items.length));
+  };
+
+  const handleGridScroll = () => {
+    const el = scrollRef.current;
+    if (!el || renderLimit >= props.items.length) return;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 800) loadMore();
+  };
+
+  const renderedItems = props.items.slice(0, renderLimit);
+
   // Group items by year-month for timeline layout
   const timelineGroups: { label: string; items: any[] }[] = props.layout === "timeline"
     ? (Object.entries(
-        props.items.reduce((acc: Record<string, any[]>, item: any) => {
+        renderedItems.reduce((acc: Record<string, any[]>, item: any) => {
           const d = new Date(item.modifiedAt);
           const key = d.toLocaleString("en", { year: "numeric", month: "long" });
           (acc[key] = acc[key] || []).push(item);
@@ -1710,18 +1984,6 @@ function LibraryScreen(props: any) {
   const tileClass = (item: any) =>
     `gallery-tile${props.inspectedId === item.id ? " inspected" : ""}${props.selectedIds.includes(item.id) ? " selected" : ""}`;
 
-  // Virtualization for the grid layout — only render tiles in the viewport
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const virtualizer = useVirtualizer({
-    count: props.items.length,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: () => 280, // estimated tile height incl. gap
-    orientation: "vertical",
-  });
-
-  const { startIndex, stopIndex, totalSize } = virtualizer;
-  const visibleItems = props.items.slice(startIndex, stopIndex + 1);
-
   // Right-clicking a photo is the most direct place to manage its album
   // membership. The picker itself carries the album list and search.
   const itemContextMenu = (item: any) => [
@@ -1745,9 +2007,11 @@ function LibraryScreen(props: any) {
 
   // Batch actions live in the contextual selection bar, so resolve the
   // selected items once and derive the toggled labels from them.
-  const selectedItems = props.selectedIds.length
-    ? library.items.filter((i: any) => props.selectedIds.includes(i.id))
-    : [];
+  const selectedItems = useMemo(() => {
+    if (!props.selectedIds.length) return [];
+    const ids = new Set(props.selectedIds);
+    return library.items.filter((i: any) => ids.has(i.id));
+  }, [library.items, props.selectedIds]);
   const anySelectedFavorite = selectedItems.some((i: any) => i.favorite);
   const anySelectedHidden = selectedItems.some((i: any) => i.hidden);
 
@@ -1809,6 +2073,20 @@ function LibraryScreen(props: any) {
                 </p>
               </div>
               <div className="import-actions">
+                <label className="source-select" title="Filter the library by folder">
+                  <FolderIcon size={14} />
+                  <span className="source-select-label">Folder</span>
+                  <select
+                    value={library.activeSource ?? ""}
+                    onChange={(e) => library.setActiveSource(e.target.value || null)}
+                    aria-label="Filter the library by folder"
+                  >
+                    <option value="">All folders</option>
+                    {library.folders.map((folder: LibraryFolder) => (
+                      <option key={folder.path} value={folder.path}>{folder.name}</option>
+                    ))}
+                  </select>
+                </label>
                 <button className="primary-button" type="button" onClick={() => props.onImportFolder?.()} disabled={props.busy} title="Open folder" aria-label="Open folder"><FolderIcon size={16} /><span className="btn-label">Open folder</span></button>
                 <button className="quiet-button" type="button" onClick={() => props.onImportFiles?.()} disabled={props.busy} title="Add files" aria-label="Add files"><PlusIcon size={16} /><span className="btn-label">Add files</span></button>
               </div>
@@ -1858,13 +2136,7 @@ function LibraryScreen(props: any) {
             <div className="filter-cluster">
               <span className="smart-label">SHOW</span>
               {["All", "Photos", "Videos", "RAW", "Favorites", "Hidden"].map((f) => {
-                let count = 0;
-                if (f === "All") count = filterSource.filter((i: any) => !i.hidden).length;
-                else if (f === "Photos") count = filterSource.filter((i: any) => i.kind === "photo" && !i.hidden).length;
-                else if (f === "Videos") count = filterSource.filter((i: any) => i.kind === "video" && !i.hidden).length;
-                else if (f === "RAW") count = filterSource.filter((i: any) => i.kind === "raw" && !i.hidden).length;
-                else if (f === "Favorites") count = filterSource.filter((i: any) => i.favorite && !i.hidden).length;
-                else if (f === "Hidden") count = filterSource.filter((i: any) => i.hidden).length;
+                const count = filterCounts[f as keyof typeof filterCounts] ?? 0;
                 return (
                   <button key={f} type="button" className={`quick-filter ${props.filter === f ? "active" : ""}`} onClick={() => props.onChangeFilter(f)}>
                     {f}
@@ -1957,12 +2229,12 @@ function LibraryScreen(props: any) {
           </div>
         )}
 
-        <div className="library-grid-container">
+        <div className="library-grid-container" ref={scrollRef} onScroll={handleGridScroll}>
           {(() => {
             if (props.layout === "details") {
               return (
                 <div className="gallery-grid layout-details">
-                    {props.items.map((item: any) => (
+                    {renderedItems.map((item: any) => (
                     <article key={item.id} className={tileClass(item)} onContextMenu={(e: any) => props.onContextMenu(itemContextMenu(item), e)}>
                       <div className="tile-select-check">
                         <input type="checkbox" checked={props.selectedIds.includes(item.id)} onChange={() => props.onToggleSelect(item.id)} title={props.selectedIds.includes(item.id) ? "Remove from selection" : "Add to selection"} onClick={(e: any) => e.stopPropagation()} />
@@ -2027,7 +2299,7 @@ function LibraryScreen(props: any) {
             }
             return (
               <div className={`gallery-grid layout-${props.layout}`}>
-                {props.items.map((item: any) => (
+                {renderedItems.map((item: any) => (
                   <article key={item.id} className={tileClass(item)} onContextMenu={(e: any) => props.onContextMenu(itemContextMenu(item), e)}>
                     <div className="tile-select-check">
                       <input type="checkbox" checked={props.selectedIds.includes(item.id)} onChange={() => props.onToggleSelect(item.id)} title={props.selectedIds.includes(item.id) ? "Remove from selection" : "Add to selection"} onClick={(e: any) => e.stopPropagation()} />
@@ -2051,6 +2323,13 @@ function LibraryScreen(props: any) {
               </div>
             );
           })()}
+          {renderLimit < props.items.length && (
+            <div className="grid-more">
+              <button type="button" className="quiet-button" onClick={loadMore}>
+                Show more · {(props.items.length - renderLimit).toLocaleString()} remaining
+              </button>
+            </div>
+          )}
         </div>
       </section>
 
@@ -2853,9 +3132,19 @@ function DuplicatesScreen(props: any) {
 }
 
 function formatBytesSimple(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  // Step up through units so a 7.5 GB library reads as "7.3 GB" instead of
+  // "7504.9 MB", and a 2 TB drive as "2.0 TB" instead of "2048.0 GB".
+  const units = ["B", "KB", "MB", "GB", "TB", "PB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  // Whole bytes need no fraction; larger units read best with one decimal.
+  const decimals = unit === 0 ? 0 : 1;
+  return `${value.toFixed(decimals)} ${units[unit]}`;
 }
 
 // Browser-based media item creation (temporary until the Tauri backend is

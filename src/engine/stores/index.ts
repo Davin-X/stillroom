@@ -3,5 +3,5 @@ export { useLibraryStore, useVisibleItems, useSelectedItem, useInspectedItem, us
 export { useViewerStore, useViewerOpen, useViewerZoom, useViewerFitMode } from "./useViewerStore";
 export { useEditStore, useEditItem, useEditValues, useEditCrop, useEditHistory } from "./useEditStore";
 export { useVaultStore, useVaultEnabled, useVaultUnlocked, useVaultItems, useVaultAutoLock } from "./useVaultStore";
-export { useSlideshowStore, useSlideshowPlaying, useSlideshowInterval, useSlideshowShuffle, useSlideshowTransition, useSlideshowCurrentItem } from "./useSlideshowStore";
+export { useSlideshowStore, type SlideshowTransition } from "./useSlideshowStore";
 export { useBatchStore, useBatchConfig, useBatchState } from "./useBatchStore";

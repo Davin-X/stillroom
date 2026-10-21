@@ -263,37 +263,194 @@ body {
   border-bottom: 1px solid var(--line);
 }
 
-.library-header .page-heading {
-  margin-bottom: 12px;
-  row-gap: 10px;
+/* Row 1: Heading on left, primary actions on right — compact, single line */
+.library-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 10px 0 8px;
 }
 
-.library-header .page-heading h1 {
-  font-size: 28px;
+.header-left {
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
 }
 
-.library-header .page-heading .eyebrow {
-  letter-spacing: 0.1em;
+.header-left .eyebrow {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
 }
 
-.library-header .page-subtitle {
+.header-left h1 {
+  margin: 2px 0 0;
+  font-family: "Manrope", sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+  line-height: 1.2;
+}
+
+.header-left .page-subtitle {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
   font-variant-numeric: tabular-nums;
 }
 
-/* Row 2: search grows, view controls stay together as one unit. */
-.library-header .collection-toolbar {
+.header-actions {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 0 10px;
   flex-wrap: nowrap;
 }
 
+.header-actions .icon-only {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  padding: 0;
+  border-radius: 9px;
+}
+
+.header-actions .action-divider {
+  width: 1px;
+  height: 22px;
+  margin: 0 4px;
+  background: var(--line);
+}
+
+.header-actions .primary-button,
+.header-actions .quiet-button {
+  height: 36px;
+  min-height: 36px;
+  border-radius: 9px;
+  font-size: 13px;
+}
+
+.header-actions .primary-button {
+  padding: 0 14px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+}
+
+.header-actions .primary-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--blue) 88%, var(--ink));
+}
+
+.header-actions .quiet-button {
+  padding: 0 12px;
+}
+
+/* Source select dropdown styling */
+.source-select {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 10px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.12s ease;
+}
+
+.source-select:hover {
+  border-color: var(--blue);
+}
+
+.source-select select {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  padding-right: 24px;
+  cursor: pointer;
+}
+
+.source-select-label {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .library-header .collection-toolbar {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  
+  .library-header .search-field {
+    order: 1;
+    flex: 1 1 100%;
+    min-width: 0;
+    max-width: none;
+  }
+  
+  .toolbar-right {
+    order: 2;
+    flex: 1 1 100%;
+    min-width: 0;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  
+  .filter-cluster {
+    flex: 1 1 auto;
+    min-width: 140px;
+  }
+  
+  .library-header .toolbar-actions {
+    flex: 0 0 auto;
+  }
+  
+  .selection-cluster {
+    flex: 0 0 auto;
+    margin-left: 0;
+  }
+}
+
+@media (min-width: 700px) {
+  .source-select-label { display: inline; }
+}
+
+/* Row 2: Search + toolbar + filters combined into one dense row */
+.library-header .collection-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 8px;
+  flex-wrap: wrap;
+}
+
 .library-header .search-field {
+  position: relative;
+  display: flex;
+  align-items: center;
   flex: 1 1 auto;
+  min-width: 160px;
   max-width: 440px;
   height: 36px;
   padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.library-header .search-field:focus-within {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px var(--blue-soft);
 }
 
 .library-header .toolbar-button {
@@ -307,43 +464,22 @@ body {
   margin-left: 0;
 }
 
-/* Import actions: one filled primary, one quiet secondary. Both share the
-   search field's 36px height and 9px radius so the row reads as one set. */
-.library-header .import-actions {
-  gap: 8px;
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1 1 auto;
+  min-width: 200px;
+  flex-wrap: wrap;
 }
 
-.library-header .import-actions .primary-button,
-.library-header .import-actions .quiet-button {
-  height: 36px;
-  min-height: 36px;
-  border-radius: 9px;
-  font-size: 13px;
-}
-
-.library-header .import-actions .primary-button {
-  padding: 0 15px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
-}
-
-.library-header .import-actions .primary-button:hover:not(:disabled) {
-  /* Light mode deepens; dark mode brightens. Text stays legible in both. */
-  background: color-mix(in srgb, var(--blue) 88%, var(--ink));
-}
-
-.library-header .import-actions .quiet-button {
-  padding: 0 13px;
-}
-
-/* The album button and layout switcher form one bordered cluster. It never
-   wraps internally; the cluster itself stays a single, compact unit. */
+/* Toolbar actions cluster (Create Album + Layout) */
 .library-header .toolbar-actions {
   display: flex;
   align-items: center;
   flex: 0 0 auto;
   flex-wrap: nowrap;
   gap: 2px;
-  margin-left: auto;
   padding: 2px;
   border: 1px solid var(--line);
   border-radius: 9px;
@@ -384,19 +520,27 @@ body {
   background: var(--line-strong);
 }
 
+/* Layout switcher: compact icon-only pills that match select-all style */
 .library-header .toolbar-actions .layout-switcher {
   height: 30px;
   padding: 2px;
   border: 0;
   border-radius: 7px;
   background: transparent;
+  display: flex;
+  gap: 2px;
 }
 
 .library-header .toolbar-actions .layout-switcher button {
-  width: 26px;
+  width: 28px;
   height: 26px;
-  border-radius: 5px;
+  min-width: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   color: var(--muted);
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease;
 }
 
 .library-header .toolbar-actions .layout-switcher button:hover {
@@ -410,30 +554,12 @@ body {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--blue) 24%, transparent);
 }
 
-/* Row 3: filters as a single scrolling rail, with Select all pinned right.
-   The rail scrolls instead of wrapping so the header height stays constant
-   when the centre pane is narrow. */
-.library-header .smart-filter-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: nowrap;
-  margin: 0;
-  padding: 0 0 12px;
-}
-
-.library-header .quick-filter {
-  height: 28px;
-  min-height: 28px;
-  padding: 0 9px;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
-.smart-filter-row .filter-cluster {
+/* Filter cluster — now inline with toolbar */
+.filter-cluster {
   display: flex;
   align-items: center;
   flex: 1 1 auto;
+  min-width: 180px;
   gap: 2px;
   min-width: 0;
   padding: 2px 4px 2px 10px;
@@ -446,8 +572,106 @@ body {
   overscroll-behavior-x: contain;
 }
 
-.smart-filter-row .filter-cluster::-webkit-scrollbar {
+.filter-cluster::-webkit-scrollbar {
   display: none;
+}
+
+.filter-cluster .smart-label {
+  flex: 0 0 auto;
+  color: var(--faint);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding-right: 4px;
+  white-space: nowrap;
+}
+
+.library-header .quick-filter {
+  height: 28px;
+  min-height: 28px;
+  padding: 0 9px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.library-header .quick-filter:hover {
+  background: var(--surface-3);
+}
+
+.library-header .quick-filter.active {
+  background: var(--blue-soft);
+  color: var(--blue);
+  font-weight: 600;
+}
+
+.library-header .quick-filter .filter-count {
+  margin-left: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.library-header .quick-filter.active .filter-count {
+  color: var(--blue);
+}
+
+/* Selection cluster — Select all button */
+.selection-cluster {
+  flex: 0 0 auto;
+  margin-left: 8px;
+}
+
+.selection-cluster .quick-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  min-height: 30px;
+  min-width: 100px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.1s ease, border-color 0.1s ease, color 0.1s ease;
+}
+
+.selection-cluster .quick-filter:hover {
+  background: var(--surface-3);
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.selection-cluster .quick-filter.active {
+  background: var(--blue-soft);
+  color: var(--blue);
+  border-color: transparent;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--blue) 24%, transparent);
+}
+
+.selection-cluster .quick-filter .select-all-icon {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  color: currentColor;
+  flex-shrink: 0;
+}
+
+.selection-cluster .quick-filter .filter-count {
+  display: none; /* not used for select all */
+}
+
+.smart-filter-row {
+  display: none; /* removed — now inline in toolbar */
 }
 
 /* Keep SHOW visible while the pills scroll underneath it. */
@@ -3124,6 +3348,32 @@ body {
   gap: 8px;
 }
 
+.album-detail-actions .play-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.album-detail-actions .play-button:hover:not(:disabled) {
+  border-color: var(--blue);
+  background: var(--surface-2);
+}
+
+.album-detail-actions .play-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .album-detail-actions .primary-button {
   height: 36px;
   padding: 0 14px;
@@ -3844,3 +4094,392 @@ body {
 }
 
 
+
+/* ===== Slideshow overlay =====
+   A context-scoped mode launched from Library, an album or the Viewer — not a
+   navigation destination. The stage stays dark in both themes so photos read
+   the same way, and the HUD fades out while the show plays.
+   Top offset clears the 56px app topbar (which hosts macOS traffic lights). */
+.slideshow-overlay {
+  position: fixed;
+  top: 56px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 200;
+  display: grid;
+  overflow: hidden;
+  place-items: center;
+  background: #08090b;
+  color: #fff;
+  user-select: none;
+}
+
+.slideshow-media {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  cursor: none;
+}
+
+.slideshow-overlay.hud-visible .slideshow-media {
+  cursor: default;
+}
+
+.slideshow-media img,
+.slideshow-media video {
+  max-width: 94vw;
+  max-height: 88vh;
+  object-fit: contain;
+  box-shadow: 0 26px 80px rgba(0, 0, 0, 0.5);
+  animation: slideshow-fade 0.35s ease;
+}
+
+.slideshow-overlay[data-transition="slide"] .slideshow-media img,
+.slideshow-overlay[data-transition="slide"] .slideshow-media video {
+  animation-name: slideshow-slide;
+}
+
+.slideshow-overlay[data-transition="none"] .slideshow-media img,
+.slideshow-overlay[data-transition="none"] .slideshow-media video {
+  animation: none;
+}
+
+@keyframes slideshow-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideshow-slide {
+  from { opacity: 0; transform: translateX(28px); }
+  to { opacity: 1; transform: none; }
+}
+
+.slideshow-hud {
+  position: absolute;
+  right: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 22px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+
+.slideshow-overlay.hud-visible .slideshow-hud {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.slideshow-hud-top {
+  top: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 20px 24px 40px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.66), transparent);
+}
+
+.slideshow-hud-bottom {
+  bottom: 0;
+  padding: 44px 24px 20px;
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.78), transparent);
+}
+
+/* Left spacer takes remaining space, position is centered via absolute positioning */
+.slideshow-hud-top::before {
+  content: "";
+  flex: 1;
+}
+
+.slideshow-position {
+  position: absolute;
+  left: 50%;
+  top: 20px;
+  transform: translateX(-50%);
+  text-align: center;
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+  padding: 4px 12px;
+  border-radius: 100px;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+  min-width: 100px;
+  pointer-events: none;
+}
+
+.slideshow-hud-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.slideshow-hud-actions button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.1s ease;
+}
+
+.slideshow-hud-actions button:hover {
+  border-color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.25);
+  transform: scale(1.05);
+}
+
+.slideshow-hud-actions button:active {
+  transform: scale(0.98);
+}
+
+.slideshow-hud-actions button.active {
+  background: rgba(255, 255, 255, 0.3);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+/* Close button - red on hover like macOS */
+.slideshow-hud-actions button[aria-label="Close slideshow"]:hover {
+  border-color: #ff5f57;
+  background: rgba(255, 95, 87, 0.3);
+  color: #ff5f57;
+}
+
+/* Settings gear - blue accent on hover */
+.slideshow-hud-actions button[aria-label="Slideshow settings"]:hover {
+  border-color: var(--blue);
+  background: color-mix(in srgb, var(--blue) 30%, transparent);
+  color: var(--blue);
+}
+
+/* Tooltip-like labels on hover */
+.slideshow-hud-actions button::after {
+  content: attr(title);
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.85);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  z-index: 10;
+}
+
+.slideshow-hud-actions button:hover::after {
+  opacity: 1;
+}
+
+.slideshow-overlay button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.slideshow-overlay button:hover {
+  border-color: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.slideshow-hud-actions button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 17px;
+}
+
+.slideshow-hud-actions button.active {
+  background: rgba(255, 255, 255, 0.26);
+}
+
+.slideshow-transport {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.slideshow-transport button {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  font-size: 20px;
+}
+
+.slideshow-transport .slideshow-toggle {
+  width: 38px;
+  height: 38px;
+  border-color: transparent;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #15181c;
+}
+
+.slideshow-transport .slideshow-toggle:hover {
+  background: #fff;
+}
+
+.slideshow-overlay-caption {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+  text-align: center;
+}
+
+.slideshow-overlay-caption b {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slideshow-overlay-caption span {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 11px;
+}
+
+.slideshow-stop {
+  padding: 8px 12px;
+}
+
+.slideshow-settings-pop {
+  position: absolute;
+  right: 22px;
+  bottom: 78px;
+  z-index: 1;
+  display: grid;
+  width: 258px;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  background: rgba(24, 26, 31, 0.94);
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 12px;
+  box-shadow: 0 20px 56px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(18px);
+}
+
+.slideshow-settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.slideshow-settings-head b {
+  color: #fff;
+  font-size: 12px;
+}
+
+.slideshow-settings-head button {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 16px;
+}
+
+.slideshow-settings-head button:hover {
+  background: transparent;
+  color: #fff;
+}
+
+.slideshow-setting {
+  display: grid;
+  gap: 7px;
+}
+
+.slideshow-setting.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.slideshow-setting > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.slideshow-setting > span i {
+  color: rgba(255, 255, 255, 0.9);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+.slideshow-setting input[type="range"] {
+  width: 100%;
+  height: 3px;
+  accent-color: #fff;
+}
+
+.slideshow-setting input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  accent-color: #fff;
+}
+
+.slideshow-setting select {
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.07);
+  color: #fff;
+  font: inherit;
+}
+
+.slideshow-setting select option {
+  color: #15181c;
+}
+
+.viewer-slideshow-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 7px;
+  background: rgba(20, 24, 30, 0.6);
+  color: #fff;
+  font-size: 11px;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+}
+
+.viewer-slideshow-button:hover {
+  background: rgba(255, 255, 255, 0.18);
+}

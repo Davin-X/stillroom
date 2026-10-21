@@ -30,11 +30,12 @@ import type { MediaItem, MediaKind, Filter } from "../engine/types/media";
 import type { LibraryFolder } from "../engine/types/commands";
 import { SettingsScreen } from "../design/components/SettingsScreen";
 import { SourcesManager } from "../design/components/SourcesManager";
+import { SlideshowOverlay } from "../design/components/SlideshowOverlay";
 import { ContextMenu } from "../design/components/ContextMenu";
 import { BrandMark } from "../design/components/BrandMark";
-import { GearIcon, SunIcon, MoonIcon, LibraryIcon, AlbumsIcon, ViewerIcon, ExploreIcon, DuplicatesIcon, EditIcon, BatchIcon, VaultIcon, SlideshowIcon, SearchIcon, PlusIcon, MinusIcon, MoreIcon, InspectorIcon, FolderIcon, GridIcon, OverviewIcon, ColumnsIcon, DetailsIcon, TimelineIcon, HeartIcon, EyeIcon, EyeOffIcon, FullscreenIcon, RotateIcon, CropIcon, FlipIcon, PlayIcon, PauseIcon, StopIcon, SparkleIcon, UsersIcon, TagIcon, ImageOffIcon, LockIcon, ShareIcon } from "../design/components/icons";
+import { GearIcon, SunIcon, MoonIcon, LibraryIcon, AlbumsIcon, ViewerIcon, ExploreIcon, DuplicatesIcon, EditIcon, BatchIcon, VaultIcon, SearchIcon, PlusIcon, MinusIcon, MoreIcon, InspectorIcon, FolderIcon, GridIcon, OverviewIcon, ColumnsIcon, DetailsIcon, TimelineIcon, HeartIcon, EyeIcon, EyeOffIcon, FullscreenIcon, RotateIcon, CropIcon, FlipIcon, PlayIcon, PauseIcon, SparkleIcon, UsersIcon, TagIcon, ImageOffIcon, LockIcon, ShareIcon, CheckIcon } from "../design/components/icons";
 
-type Screen = "Library" | "Albums" | "Viewer" | "Explore" | "Duplicates" | "Edit" | "Batch" | "Vault" | "Slideshow" | "Settings";
+type Screen = "Library" | "Albums" | "Viewer" | "Explore" | "Duplicates" | "Edit" | "Batch" | "Vault" | "Settings";
 
 const initialEdits = { exposure: 0, contrast: 0, warmth: 0, shadows: 0, highlights: 0, saturation: 0, rotation: 0, flip: false };
 
@@ -144,7 +145,6 @@ function App() {
   const viewer = useViewerStore();
   const edit = useEditStore();
   const vault = useVaultStore();
-  const slideshow = useSlideshowStore();
   const batch = useBatchStore();
   const settings = useSettingsStore();
 
@@ -160,15 +160,6 @@ function App() {
       viewer.open();
     }
   }, [screen, viewer.isOpen, viewer.close, viewer.open]);
-
-  // A slideshow only exists while its screen is visible. Navigation can also
-  // happen outside openScreen (viewer, keyboard shortcuts), so stop it here
-  // as a single source of truth.
-  useEffect(() => {
-    if (screen !== "Slideshow" && slideshow.playing) {
-      slideshow.stop();
-    }
-  }, [screen, slideshow.playing, slideshow.stop]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -395,6 +386,10 @@ function App() {
       const mod = e.metaKey || e.ctrlKey;
       const key = e.key.toLowerCase();
 
+      // A slideshow owns the keyboard while it is open: its overlay handles
+      // Escape/arrows/Space itself, and nothing underneath should react.
+      if (useSlideshowStore.getState().isOpen) return;
+
       // While a modal is open, every key belongs to it (the dialogs own Enter
       // and Escape) instead of the global shortcut map.
       if (albumDialogOpen || albumPickerOpen || albumPendingDelete || folderPendingRemove || sourcesSheetOpen) return;
@@ -501,6 +496,23 @@ function App() {
   const showNotice = useCallback((text: string) => {
     library.showNotice(text);
   }, [library]);
+
+  // Slideshow is a mode over the current context, not a separate screen:
+  // play the selection when there is one, otherwise the collection on screen
+  // (album, folder, filter or search results).
+  const playSlideshow = useCallback((ids?: string[]) => {
+    const selection = ids && ids.length ? new Set(ids) : null;
+    const scope = selection
+      ? library.items.filter((item: MediaItem) => selection.has(item.id))
+      : library.visibleItems;
+    if (scope.length === 0) {
+      showNotice("Add photos or videos to start a slideshow.");
+      return;
+    }
+    // Read the action off the store instead of subscribing to it: advancing
+    // slides should only re-render the overlay, never the whole app.
+    useSlideshowStore.getState().open(scope, library.inspectedId);
+  }, [library.items, library.visibleItems, library.inspectedId, showNotice]);
 
   const openAlbumDialog = useCallback((seedIds?: string[]) => {
     setAlbumDialogMode("create");
@@ -834,15 +846,6 @@ function App() {
       }
     }
     if (next === "Vault") vault.loadStatus();
-    if (next === "Slideshow") {
-      if (library.playableItems.length === 0) {
-        showNotice("Add photos or videos to start a slideshow.");
-        return;
-      }
-      slideshow.start();
-    } else {
-      slideshow.stop();
-    }
     setScreen(next);
   };
 
@@ -994,7 +997,6 @@ handlersRef.current = { importFolder, importFiles, showNotice };
                 { label: "Edit", Icon: EditIcon, screen: "Edit" as Screen },
                 { label: "Batch", Icon: BatchIcon, screen: "Batch" as Screen },
                 { label: "Vault", Icon: VaultIcon, screen: "Vault" as Screen },
-                { label: "Slideshow", Icon: SlideshowIcon, screen: "Slideshow" as Screen },
               ].map(({ label, Icon, screen: target }) => (
                 <button
                   key={label}
@@ -1130,6 +1132,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             onOpenViewer={(id?: string) => { viewer.open(id); setScreen("Viewer"); }}
             onImportFolder={() => importFolder()}
             onImportFiles={() => importFiles()}
+            onPlaySlideshow={playSlideshow}
             onCreateAlbum={openAlbumDialog}
             searchInputRef={searchInputRef}
             onContextMenu={openContextMenu}
@@ -1176,6 +1179,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             onToggleFavorite={library.toggleFavorite}
             onToggleHidden={library.toggleHidden}
             onOpenEdit={(item: any) => { edit.open(item); setScreen("Edit"); }}
+            onPlaySlideshow={playSlideshow}
             onContextMenu={openContextMenu}
             assetUrl={assetUrl}
           />}
@@ -1235,21 +1239,6 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             onToggleEnabled={(e: any) => vault.toggleEnabled(e)}
             onSetAutoLock={(m: any) => vault.setAutoLock(m)}
             notice={showNotice}
-          />}
-
-          {screen === "Slideshow" && <SlideshowScreen
-            items={library.playableItems}
-            currentItem={slideshow.currentItem}
-            interval={slideshow.interval}
-            shuffle={slideshow.shuffle}
-            transition={slideshow.transition}
-            onStop={slideshow.stop}
-            onNext={slideshow.next}
-            onPrevious={slideshow.previous}
-            onSetInterval={slideshow.setInterval}
-            onSetShuffle={slideshow.setShuffle}
-            onSetTransition={slideshow.setTransition}
-            assetUrl={assetUrl}
           />}
 
           {screen === "Explore" && <ExploreScreen items={library.items.filter((i: any) => !i.hidden)} assetUrl={assetUrl} />}
@@ -1661,6 +1650,8 @@ handlersRef.current = { importFolder, importFiles, showNotice };
         </div>
       )}
 
+      <SlideshowOverlay assetUrl={assetUrl} />
+
       {contextMenu && (
         <ContextMenu
           items={contextMenu.items}
@@ -2043,6 +2034,15 @@ function LibraryScreen(props: any) {
                 </div>
                 <div className="album-detail-actions">
                   <button
+                    className="play-button"
+                    type="button"
+                    onClick={() => props.onPlaySlideshow?.(props.selectedIds)}
+                    disabled={props.busy || props.items.length === 0}
+                    title="Play this album as a slideshow"
+                  >
+                    <PlayIcon size={14} /> Play
+                  </button>
+                  <button
                     className="primary-button"
                     type="button"
                     onClick={() => props.onAddItems?.(props.activeAlbum)}
@@ -2063,8 +2063,8 @@ function LibraryScreen(props: any) {
               </div>
             </div>
           ) : (
-            <div className="page-heading">
-              <div>
+            <header className="library-header-row">
+              <div className="header-left">
                 <p className="eyebrow">YOUR COLLECTION</p>
                 <h1>All Photos</h1>
                 <p className="page-subtitle">
@@ -2072,7 +2072,17 @@ function LibraryScreen(props: any) {
                   {props.hiddenCount ? ` · ${props.hiddenCount.toLocaleString()} hidden` : ""}
                 </p>
               </div>
-              <div className="import-actions">
+              <div className="header-actions">
+                <button
+                  className="quiet-button icon-only"
+                  type="button"
+                  onClick={() => props.onPlaySlideshow?.(props.selectedIds)}
+                  disabled={props.busy || props.items.length === 0}
+                  title="Play the current view as a slideshow (Space)"
+                  aria-label="Play slideshow"
+                >
+                  <PlayIcon size={16} />
+                </button>
                 <label className="source-select" title="Filter the library by folder">
                   <FolderIcon size={14} />
                   <span className="source-select-label">Folder</span>
@@ -2087,10 +2097,15 @@ function LibraryScreen(props: any) {
                     ))}
                   </select>
                 </label>
-                <button className="primary-button" type="button" onClick={() => props.onImportFolder?.()} disabled={props.busy} title="Open folder" aria-label="Open folder"><FolderIcon size={16} /><span className="btn-label">Open folder</span></button>
-                <button className="quiet-button" type="button" onClick={() => props.onImportFiles?.()} disabled={props.busy} title="Add files" aria-label="Add files"><PlusIcon size={16} /><span className="btn-label">Add files</span></button>
+                <div className="action-divider" aria-hidden="true" />
+                <button className="primary-button" type="button" onClick={() => props.onImportFolder?.()} disabled={props.busy} title="Open folder (⌘O)" aria-label="Open folder">
+                  <FolderIcon size={15} /><span className="btn-label">Open folder</span>
+                </button>
+                <button className="quiet-button" type="button" onClick={() => props.onImportFiles?.()} disabled={props.busy} title="Add files (⌘I)" aria-label="Add files">
+                  <PlusIcon size={15} /><span className="btn-label">Add files</span>
+                </button>
               </div>
-            </div>
+            </header>
           )}
 
           <div className="collection-toolbar">
@@ -2118,50 +2133,50 @@ function LibraryScreen(props: any) {
                 <kbd title="Focus search">{searchShortcutLabel()}</kbd>
               )}
             </div>
-            <div className="toolbar-actions">
-              <button className="toolbar-button" type="button" onClick={() => props.onCreateAlbum?.()} title="Create album"><PlusIcon size={15} /> Album</button>
-              <span className="toolbar-divider" aria-hidden="true" />
-              <div className="layout-switcher" aria-label="Gallery layout">
-                {(["grid", "columns", "details", "timeline"] as const).map((l) => {
-                  const Icon = l === "grid" ? GridIcon : l === "columns" ? ColumnsIcon : l === "details" ? DetailsIcon : TimelineIcon;
+            <div className="toolbar-right">
+              <div className="toolbar-actions">
+                <button className="toolbar-button" type="button" onClick={() => props.onCreateAlbum?.()} title="Create album (⌘N)"><PlusIcon size={14} /> Album</button>
+                <span className="toolbar-divider" aria-hidden="true" />
+                <div className="layout-switcher" aria-label="Gallery layout">
+                  {(["grid", "columns", "details", "timeline"] as const).map((l) => {
+                    const Icon = l === "grid" ? GridIcon : l === "columns" ? ColumnsIcon : l === "details" ? DetailsIcon : TimelineIcon;
+                    return (
+                      <button key={l} type="button" aria-label={l} title={l} className={props.layout === l ? "selected" : ""} onClick={() => props.onChangeLayout(l)}><Icon size={14} /></button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="selection-cluster">
+                {(() => {
+                  const visibleCount = library.visibleItems.length;
+                  const selectedCount = library.selectedIds.length;
+                  const allSelected = visibleCount > 0 && selectedCount >= visibleCount;
                   return (
-                    <button key={l} type="button" aria-label={l} title={l} className={props.layout === l ? "selected" : ""} onClick={() => props.onChangeLayout(l)}><Icon size={15} /></button>
+                    <button
+                      key="select-all"
+                      type="button"
+                      className={`quick-filter select-all-toggle ${allSelected ? "active" : ""}`}
+                      onClick={() => props.onToggleSelectAll?.()}
+                      title="Select/deselect all (⌘A)"
+                    >
+                      <span className="select-all-icon"><CheckIcon size={12} /></span>
+                      {allSelected ? "Deselect all" : "Select all"}
+                    </button>
+                  );
+                })()}
+              </div>
+              <div className="filter-cluster">
+                <span className="smart-label">SHOW</span>
+                {["All", "Photos", "Videos", "RAW", "Favorites", "Hidden"].map((f) => {
+                  const count = filterCounts[f as keyof typeof filterCounts] ?? 0;
+                  return (
+                    <button key={f} type="button" className={`quick-filter ${props.filter === f ? "active" : ""}`} onClick={() => props.onChangeFilter(f)}>
+                      {f}
+                      <span className="filter-count">{count}</span>
+                    </button>
                   );
                 })}
               </div>
-            </div>
-          </div>
-
-          <div className="smart-filter-row">
-            <div className="filter-cluster">
-              <span className="smart-label">SHOW</span>
-              {["All", "Photos", "Videos", "RAW", "Favorites", "Hidden"].map((f) => {
-                const count = filterCounts[f as keyof typeof filterCounts] ?? 0;
-                return (
-                  <button key={f} type="button" className={`quick-filter ${props.filter === f ? "active" : ""}`} onClick={() => props.onChangeFilter(f)}>
-                    {f}
-                    <span className="filter-count">{count}</span>
-                  </button>
-                );
-              })}
-            </div>
-            <div className="selection-cluster">
-              {(() => {
-                const visibleCount = library.visibleItems.length;
-                const selectedCount = library.selectedIds.length;
-                const allSelected = visibleCount > 0 && selectedCount >= visibleCount;
-                return (
-                  <button
-                    key="select-all"
-                    type="button"
-                    className={`quick-filter select-all-toggle ${allSelected ? "active" : ""}`}
-                    onClick={() => props.onToggleSelectAll?.()}
-                    title="Select/deselect all items"
-                  >
-                    {allSelected ? "Deselect all" : "Select all"}
-                  </button>
-                );
-              })()}
             </div>
           </div>
 
@@ -2171,6 +2186,14 @@ function LibraryScreen(props: any) {
                 {props.selectedIds.length.toLocaleString()} selected
               </span>
               <span className="selection-bar-divider" aria-hidden="true" />
+              <button
+                type="button"
+                className="selection-bar-action"
+                onClick={() => props.onPlaySlideshow?.(props.selectedIds)}
+                title="Play selected items as a slideshow"
+              >
+                <PlayIcon size={13} /> Play
+              </button>
               <button
                 type="button"
                 className="selection-bar-action"
@@ -2504,8 +2527,9 @@ function ViewerScreen(props: any) {
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if typing in an input
+      // Ignore if typing in an input, or if the slideshow overlay is driving.
       if ((e.target as HTMLElement).closest("input, textarea, select")) return;
+      if (useSlideshowStore.getState().isOpen) return;
 
       switch (e.key) {
         case "ArrowLeft":
@@ -2635,6 +2659,14 @@ function ViewerScreen(props: any) {
             {props.flipX ? "Flipped" : ""}
             {props.items.findIndex((i: any) => i.id === props.selected?.id) + 1} / {props.items.length}
           </span>
+          <button
+            className="viewer-slideshow-button"
+            type="button"
+            onClick={() => props.onPlaySlideshow?.(props.items.map((i: any) => i.id))}
+            title="Play this collection as a slideshow"
+          >
+            <PlayIcon size={12} /> Slideshow
+          </button>
         </div>
         {/* Compact shortcut hints live in the stage corner so the frame keeps
             all of its room for the media and the control bar. */}
@@ -2836,58 +2868,6 @@ function VaultScreen(props: any) {
           </button>
         ))}
         {props.items.length === 0 && <p className="vault-empty">No items in vault. Select items in Library and add them here.</p>}
-      </div>
-    </div>
-  );
-}
-
-function SlideshowScreen(props: any) {
-  if (!props.items || props.items.length === 0) {
-    return (
-      <div className="slideshow-page">
-        <div className="page-heading">
-          <div><p className="eyebrow">SLIDESHOW</p><h1>Slideshow</h1><p className="page-subtitle">Add photos or videos to start a slideshow.</p></div>
-        </div>
-        <div className="viewer-empty-state"><div className="first-run-art"><SlideshowIcon size={30} /></div><h2>No media yet</h2><p>Import photos or videos to create a slideshow.</p></div>
-      </div>
-    );
-  }
-  return (
-    <div className="slideshow-page">
-      <div className="slideshow-layout">
-        <div className="slideshow-stage">
-          {props.currentItem && props.currentItem.kind === "photo" && <img src={props.assetUrl(props.currentItem.path)} alt={props.currentItem.name} />}
-          {props.currentItem && props.currentItem.kind === "video" && <video src={props.assetUrl(props.currentItem.path)} autoPlay />}
-          <div className="slideshow-gradient" />
-          <div className="slideshow-count">{props.items.findIndex((i: any) => i.id === props.currentItem?.id) + 1} <i>/</i> {props.items.length}</div>
-          <div className="slideshow-caption">
-            <span>SLIDESHOW</span>
-            <h2>{props.currentItem?.name}</h2>
-            <p>{new Date(props.currentItem?.modifiedAt || Date.now()).toLocaleDateString()} <i>·</i> {props.currentItem?.extension?.toUpperCase()}</p>
-          </div>
-          <div className="slideshow-controls">
-            <button type="button" onClick={props.onPrevious}>‹ Prev</button>
-            <button type="button" onClick={props.onStop}><StopIcon size={13} /> Stop</button>
-            <button type="button" onClick={props.onNext}>Next ›</button>
-          </div>
-        </div>
-        <aside className="slideshow-settings">
-          <h2>Slideshow</h2>
-          <label>Interval (seconds)
-            <input type="range" min={2} max={30} value={props.interval} onChange={(e) => props.onSetInterval(Number(e.target.value))} />
-            <span>{props.interval}s</span>
-          </label>
-          <label>
-            <input type="checkbox" checked={props.shuffle} onChange={(e) => props.onSetShuffle(e.target.checked)} /> Shuffle
-          </label>
-          <label>Transition
-            <select value={props.transition} onChange={(e) => props.onSetTransition(e.target.value)}>
-              <option value="fade">Fade</option>
-              <option value="slide">Slide</option>
-              <option value="none">None</option>
-            </select>
-          </label>
-        </aside>
       </div>
     </div>
   );

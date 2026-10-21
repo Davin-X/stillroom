@@ -3789,6 +3789,17 @@ body {
   letter-spacing: -0.03em;
 }
 
+.dialog-body {
+  margin: 18px 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.dialog-body b {
+  color: var(--ink);
+}
+
 .dialog-close {
   display: grid;
   width: 28px;
@@ -3853,12 +3864,25 @@ body {
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
-  margin-top: 20px;
+  gap: 10px;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
 }
 
 .dialog-actions .primary-button {
-  min-height: 32px;
+  min-height: 34px;
+}
+
+.confirm-dialog {
+  width: min(460px, 100%);
+}
+
+.confirm-dialog .dialog-body {
+  margin: 20px 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 /* Searchable album picker. */

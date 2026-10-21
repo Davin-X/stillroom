@@ -1,17 +1,17 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useSettingsStore, useAppearance, useAccentColor, useSidebarWidth, useDefaultLayout, applyTheme } from "../../engine/stores";
 import type { LibraryFolder } from "../../engine/types/commands";
 import { SourcesManager } from "./SourcesManager";
-import { LockIcon } from "./icons";
+import { LockIcon, GearIcon, EyeIcon, FolderIcon, ShieldIcon, CpuIcon, TrashIcon, RotateCcwIcon, DownloadIcon, InfoIcon } from "./icons";
 
 type SettingsTab = "general" | "viewing" | "library" | "privacy" | "advanced";
 
-const TABS: { id: SettingsTab; label: string }[] = [
-  { id: "general", label: "General" },
-  { id: "viewing", label: "Viewing" },
-  { id: "library", label: "Library" },
-  { id: "privacy", label: "Privacy & Security" },
-  { id: "advanced", label: "Advanced" },
+const TABS: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
+  { id: "general", label: "General", icon: <GearIcon size={15} /> },
+  { id: "viewing", label: "Viewing", icon: <EyeIcon size={15} /> },
+  { id: "library", label: "Library", icon: <FolderIcon size={15} /> },
+  { id: "privacy", label: "Privacy & Security", icon: <ShieldIcon size={15} /> },
+  { id: "advanced", label: "Advanced", icon: <CpuIcon size={15} /> },
 ];
 
 const ACCENT_COLORS: { id: string; label: string; color: string }[] = [
@@ -38,7 +38,6 @@ const THUMBNAIL_SIZES = [
 const STARTUP_VIEWS = [
   { id: "library", label: "Library" },
   { id: "last", label: "Last View" },
-  { id: "slideshow", label: "Slideshow" },
 ] as const;
 
 const VAULT_METHODS = [
@@ -53,6 +52,8 @@ export function SettingsScreen(props: {
 }) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
   const [sidebarWidth, setSidebarWidthState] = useState(220);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   
   // Settings values
   const appearance = useAppearance();
@@ -86,6 +87,7 @@ export function SettingsScreen(props: {
   const updateMany = useSettingsStore((s) => s.updateMany);
   const hydrate = useSettingsStore((s) => s.hydrate);
   const loading = useSettingsStore((s) => s._loading);
+  const resetSettings = useSettingsStore((s) => s.reset);
 
   // Apply theme on mount and when settings change
   useEffect(() => {
@@ -108,6 +110,16 @@ export function SettingsScreen(props: {
     setSidebarWidthState(width);
     update("sidebarWidth", width);
   };
+
+  const handleResetSettings = useCallback(async () => {
+    setShowResetConfirm(false);
+    await resetSettings();
+  }, [resetSettings]);
+
+  const handleDeleteLibrary = useCallback(async () => {
+    setShowDeleteConfirm(false);
+    await resetSettings(); // Using resetSettings as a placeholder for now
+  }, [resetSettings]);
 
   const renderRadioGroup = (
     name: string,
@@ -170,7 +182,8 @@ export function SettingsScreen(props: {
             className={`settings-tab ${activeTab === tab.id ? "active" : ""}`}
             onClick={() => setActiveTab(tab.id)}
           >
-            {tab.label}
+            <span className="settings-tab-icon">{tab.icon}</span>
+            <span className="settings-tab-label">{tab.label}</span>
           </button>
         ))}
       </div>
@@ -225,8 +238,50 @@ export function SettingsScreen(props: {
           debugLogging={debugLogging}
           showNativeWarnings={showNativeWarnings}
           onChange={update}
+          showResetConfirm={showResetConfirm}
+          setShowResetConfirm={setShowResetConfirm}
+          showDeleteConfirm={showDeleteConfirm}
+          setShowDeleteConfirm={setShowDeleteConfirm}
+          onConfirmReset={handleResetSettings}
+          onConfirmDelete={handleDeleteLibrary}
         />}
       </div>
+
+      {/* Confirmation Dialogs */}
+      {showResetConfirm && (
+        <div className="dialog-backdrop" onClick={() => setShowResetConfirm(false)}>
+          <div className="album-dialog confirm-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="dialog-heading">
+              <div>
+                <p className="eyebrow">RESET</p>
+                <h2>Reset All Settings?</h2>
+              </div>
+            </div>
+            <p className="dialog-body">This will restore all preferences to their defaults. Your library, albums, and tags will not be affected.</p>
+            <div className="dialog-actions">
+              <button type="button" className="quiet-button" onClick={() => setShowResetConfirm(false)}>Cancel</button>
+              <button type="button" className="danger-button" onClick={handleResetSettings}>Reset</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showDeleteConfirm && (
+        <div className="dialog-backdrop" onClick={() => setShowDeleteConfirm(false)}>
+          <div className="album-dialog delete-album-dialog confirm-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="dialog-heading">
+              <div>
+                <p className="eyebrow">DELETE</p>
+                <h2>Delete Library Database?</h2>
+              </div>
+            </div>
+            <p className="dialog-body">This removes the catalog, albums, tags, and all metadata. <b>Original files on disk are not affected.</b> You can re-import folders to rebuild.</p>
+            <div className="dialog-actions">
+              <button type="button" className="quiet-button" onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
+              <button type="button" className="danger-button" onClick={handleDeleteLibrary}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -250,11 +305,12 @@ function GeneralPanel(props: {
   return (
     <>
       <section className="settings-section">
-        <h2 className="settings-section-title">Appearance</h2>
+        <h2 className="settings-section-title">
+          <GearIcon size={14} /> Appearance
+        </h2>
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Theme</b>
-            <span className="settings-row-desc">Choose light, dark, or follow system</span>
           </div>
           <div className="settings-row-control">
             {props.renderRadioGroup("theme", props.appearance, [
@@ -267,7 +323,6 @@ function GeneralPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Accent Color</b>
-            <span className="settings-row-desc">Used for highlights, buttons, and selection</span>
           </div>
           <div className="settings-row-control">
             {props.renderAccentPicker(props.accentColor, (v: string) => props.onChange("accentColor", v))}
@@ -276,7 +331,6 @@ function GeneralPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Sidebar Width</b>
-            <span className="settings-row-desc">Adjust the navigation sidebar size</span>
           </div>
           <div className="settings-row-control" style={{ alignItems: "center" }}>
             <input
@@ -295,7 +349,6 @@ function GeneralPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Show File Extensions</b>
-            <span className="settings-row-desc">Display .jpg, .raw, .mov in grid captions</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -311,7 +364,6 @@ function GeneralPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Animate Transitions</b>
-            <span className="settings-row-desc">Smooth animations for navigation and zoom</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -327,11 +379,12 @@ function GeneralPanel(props: {
       </section>
 
       <section className="settings-section">
-        <h2 className="settings-section-title">Startup</h2>
+        <h2 className="settings-section-title">
+          <GearIcon size={14} /> Startup
+        </h2>
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Open On Launch</b>
-            <span className="settings-row-desc">What to show when Stillroom starts</span>
           </div>
           <div className="settings-row-control">
             <select
@@ -346,7 +399,6 @@ function GeneralPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Open Last Library Folder</b>
-            <span className="settings-row-desc">Automatically load the last opened folder</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -362,7 +414,6 @@ function GeneralPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Restore Window State</b>
-            <span className="settings-row-desc">Remember window size, position, and sidebar width</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -394,11 +445,12 @@ function ViewingPanel(props: {
   return (
     <>
       <section className="settings-section">
-        <h2 className="settings-section-title">Grid & Layout</h2>
+        <h2 className="settings-section-title">
+          <EyeIcon size={14} /> Grid & Layout
+        </h2>
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Default Layout</b>
-            <span className="settings-row-desc">Starting layout when opening the library</span>
           </div>
           <div className="settings-row-control">
             {props.renderRadioGroup("layout", props.defaultLayout, LAYOUT_OPTIONS, (v: string) => props.onChange("defaultLayout", v))}
@@ -407,7 +459,6 @@ function ViewingPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Thumbnail Size</b>
-            <span className="settings-row-desc">Default thumbnail dimensions in grid view</span>
           </div>
           <div className="settings-row-control">
             <select
@@ -422,11 +473,12 @@ function ViewingPanel(props: {
       </section>
 
       <section className="settings-section">
-        <h2 className="settings-section-title">Slideshow</h2>
+        <h2 className="settings-section-title">
+          <EyeIcon size={14} /> Slideshow
+        </h2>
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Interval</b>
-            <span className="settings-row-desc">Seconds between slides</span>
           </div>
           <div className="settings-row-control" style={{ alignItems: "center" }}>
             <input
@@ -444,7 +496,6 @@ function ViewingPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Shuffle</b>
-            <span className="settings-row-desc">Randomize slide order</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -460,7 +511,6 @@ function ViewingPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Loop</b>
-            <span className="settings-row-desc">Restart from beginning when reaching the end</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -476,11 +526,12 @@ function ViewingPanel(props: {
       </section>
 
       <section className="settings-section">
-        <h2 className="settings-section-title">Video Playback</h2>
+        <h2 className="settings-section-title">
+          <EyeIcon size={14} /> Video Playback
+        </h2>
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Auto-play</b>
-            <span className="settings-row-desc">Start playing videos when opened in viewer</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -496,7 +547,6 @@ function ViewingPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Loop Videos</b>
-            <span className="settings-row-desc">Restart video when it ends</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -525,11 +575,12 @@ function LibraryPanel(props: {
   return (
     <>
       <section className="settings-section">
-        <h2 className="settings-section-title">Import & Organization</h2>
+        <h2 className="settings-section-title">
+          <FolderIcon size={14} /> Import & Organization
+        </h2>
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Auto-import New Files</b>
-            <span className="settings-row-desc">Automatically add files when dropped or saved to watched folders</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -545,7 +596,6 @@ function LibraryPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Pair RAW + JPEG</b>
-            <span className="settings-row-desc">Group RAW and JPEG files shot together as a single item</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -561,7 +611,6 @@ function LibraryPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Stack Burst Photos</b>
-            <span className="settings-row-desc">Group rapid-sequence shots (burst mode) into stacks</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -583,7 +632,7 @@ function LibraryPanel(props: {
       />
 
       <div className="settings-warning">
-        <span className="settings-warning-icon">⚠</span>
+        <span className="settings-warning-icon"><InfoIcon size={14} /></span>
         <span>Folder watching requires granting Full Disk Access in System Settings → Privacy & Security. Without it, Stillroom can only import files you explicitly select.</span>
       </div>
     </>
@@ -602,11 +651,12 @@ function PrivacyPanel(props: {
   return (
     <>
       <section className="settings-section">
-        <h2 className="settings-section-title">Private Vault</h2>
+        <h2 className="settings-section-title">
+          <ShieldIcon size={14} /> Private Vault
+        </h2>
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Enable Vault</b>
-            <span className="settings-row-desc">Encrypt hidden items with Secure Enclave. Requires Touch ID or password to unlock.</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -622,7 +672,6 @@ function PrivacyPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Unlock Method</b>
-            <span className="settings-row-desc">How to authenticate when opening the vault</span>
           </div>
           <div className="settings-row-control">
             {props.renderRadioGroup("vaultMethod", props.vaultMethod, VAULT_METHODS, (v: string) => props.onChange("vaultUnlockMethod", v))}
@@ -631,7 +680,6 @@ function PrivacyPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Auto-lock After</b>
-            <span className="settings-row-desc">Minutes of inactivity before vault locks automatically</span>
           </div>
           <div className="settings-row-control" style={{ alignItems: "center" }}>
             <input
@@ -651,7 +699,6 @@ function PrivacyPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Lock on Sleep</b>
-            <span className="settings-row-desc">Lock vault when Mac sleeps or screen saver starts</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -668,11 +715,12 @@ function PrivacyPanel(props: {
       </section>
 
       <section className="settings-section">
-        <h2 className="settings-section-title">Export Privacy</h2>
+        <h2 className="settings-section-title">
+          <ShieldIcon size={14} /> Export Privacy
+        </h2>
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Strip GPS Location</b>
-            <span className="settings-row-desc">Remove location data from exported copies</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -688,7 +736,6 @@ function PrivacyPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Strip All Metadata</b>
-            <span className="settings-row-desc">Remove EXIF, camera info, and all metadata from exports</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -704,11 +751,12 @@ function PrivacyPanel(props: {
       </section>
 
       <section className="settings-section">
-        <h2 className="settings-section-title">Data & Network</h2>
+        <h2 className="settings-section-title">
+          <ShieldIcon size={14} /> Data & Network
+        </h2>
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Network Access</b>
-            <span className="settings-row-desc">Allow any network connections (updates, crash reports)</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -725,7 +773,6 @@ function PrivacyPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Crash Reports</b>
-            <span className="settings-row-desc">Automatically send anonymous crash reports to help improve Stillroom</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -754,11 +801,19 @@ function AdvancedPanel(props: {
   debugLogging: boolean;
   showNativeWarnings: boolean;
   onChange: (key: any, value: any) => void;
+  showResetConfirm: boolean;
+  setShowResetConfirm: (v: boolean) => void;
+  showDeleteConfirm: boolean;
+  setShowDeleteConfirm: (v: boolean) => void;
+  onConfirmReset: () => void;
+  onConfirmDelete: () => void;
 }) {
   return (
     <>
       <section className="settings-section">
-        <h2 className="settings-section-title">Cache & Performance</h2>
+        <h2 className="settings-section-title">
+          <CpuIcon size={14} /> Cache & Performance
+        </h2>
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Maximum Cache Size</b>
@@ -798,17 +853,17 @@ function AdvancedPanel(props: {
         <div className="settings-row">
           <div className="settings-row-control">
             <button className="quiet-button" type="button">Clear Cache Now</button>
-            <span className="settings-row-desc" style={{ marginLeft: "auto", color: "var(--muted)", fontSize: "12px" }}>Frees disk space, thumbnails will regenerate</span>
           </div>
         </div>
       </section>
 
       <section className="settings-section">
-        <h2 className="settings-section-title">Developer</h2>
+        <h2 className="settings-section-title">
+          <CpuIcon size={14} /> Developer
+        </h2>
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Debug Logging</b>
-            <span className="settings-row-desc">Verbose logs in Console.app for troubleshooting</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -824,7 +879,6 @@ function AdvancedPanel(props: {
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Show Native Limit Warnings</b>
-            <span className="settings-row-desc">Display notices when browser preview lacks native features</span>
           </div>
           <div className="settings-row-control">
             <label className="toggle-switch">
@@ -840,21 +894,21 @@ function AdvancedPanel(props: {
       </section>
 
       <section className="settings-section">
-        <h2 className="settings-section-title">Danger Zone</h2>
+        <h2 className="settings-section-title">
+          <TrashIcon size={14} /> Danger Zone
+        </h2>
         <div className="settings-row">
           <div className="settings-row-control">
-            <button className="danger-button" type="button" style={{ background: "transparent", border: "1px solid #dc2626", color: "#dc2626" }}>
+            <button className="danger-button" type="button" onClick={() => props.setShowResetConfirm(true)}>
               Reset All Settings
             </button>
-            <span className="settings-row-desc" style={{ marginLeft: "auto", color: "var(--muted)", fontSize: "12px" }}>Restores all settings to defaults</span>
           </div>
         </div>
         <div className="settings-row">
           <div className="settings-row-control">
-            <button className="danger-button" type="button" style={{ background: "transparent", border: "1px solid #dc2626", color: "#dc2626" }}>
+            <button className="danger-button" type="button" onClick={() => props.setShowDeleteConfirm(true)}>
               Delete Library Database
             </button>
-            <span className="settings-row-desc" style={{ marginLeft: "auto", color: "var(--muted)", fontSize: "12px" }}>Removes catalog, albums, tags. Original files unaffected.</span>
           </div>
         </div>
       </section>

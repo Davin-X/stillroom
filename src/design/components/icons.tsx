@@ -413,6 +413,59 @@ export function LockIcon({ size = 13, className = "", strokeWidth = 1.9 }: IconP
   );
 }
 
+export function ShieldIcon({ size = 16, className = "", strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={strokeWidth}>
+      <path d="M12 2L3 7v11c0 5 4 8 9 11 5-3 9-6 9-11V7L12 2z" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M9 9h6M9 12h4" strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+export function CpuIcon({ size = 16, className = "", strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={strokeWidth}>
+      <rect x="4" y="4" width="16" height="16" rx="2" />
+      <path d="M4 9h16M4 15h16" strokeLinecap="round" />
+      <path d="M9 4v16M15 4v16" strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+export function TrashIcon({ size = 16, className = "", strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={strokeWidth}>
+      <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6" strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+export function RotateCcwIcon({ size = 16, className = "", strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={strokeWidth}>
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M3 3v5h5" strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+export function DownloadIcon({ size = 16, className = "", strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={strokeWidth}>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+export function InfoIcon({ size = 16, className = "", strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg size={size} className={className} strokeWidth={strokeWidth}>
+      <circle cx="12" cy="12" r="10" fill="none" />
+      <path d="M12 16v-4M12 8h.01" strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
 export function CheckIcon({ size = 14, className = "", strokeWidth = 2.2 }: IconProps) {
   return (
     <Svg size={size} className={className} strokeWidth={strokeWidth}>

@@ -2862,9 +2862,9 @@ function EditScreen(props: any) {
           return (
             <div style={{ marginBottom: 16 }}>
               <h3 style={{ margin: "0 0 8px", color: "var(--text)" }}>Drafts</h3>
-              <div className="edit-picker-grid" style={{ gridTemplateColumns: "repeat(6, 1fr)", maxHeight: "none", overflow: "visible" }}>
+              <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8, marginBottom: 8 }}>
                 {drafts.map((item: any) => (
-                  <button key={item.id} type="button" className="edit-picker-tile" onClick={() => props.onOpenEdit?.(item)}>
+                  <button key={item.id} type="button" className="edit-picker-tile" style={{ minWidth: 140, width: 140 }} onClick={() => props.onOpenEdit?.(item)}>
                     <img src={props.assetUrl(item.path)} alt={item.name} />
                     <span>{item.name}</span>
                     <span className="draft-badge">Draft</span>

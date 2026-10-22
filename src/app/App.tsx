@@ -2851,20 +2851,44 @@ function EditScreen(props: any) {
         <div className="page-heading">
           <div><p className="eyebrow">NON-DESTRUCTIVE EDITING</p><h1>Select a photo to edit</h1><p className="page-subtitle">Choose a browser-supported photo from your library or browse from disk, then open the editor.</p></div>
         </div>
-        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
           <button className="quiet-button" type="button" onClick={() => props.onBack?.()}>Back to Library</button>
           <input className="search-input" placeholder="Search photos..." value={pickerQuery} onChange={(e) => setPickerQuery(e.target.value)} style={{ flex: 1 }} />
           <button className="quiet-button" type="button" onClick={browse}>Browse from Finder…</button>
         </div>
+        {(() => {
+          const drafts = (props.items || []).filter((it: any) => { try { return !!localStorage.getItem(`edit:draft:${it.id}`); } catch { return false; } });
+          if (!drafts.length) return null;
+          return (
+            <div style={{ marginBottom: 16 }}>
+              <h3 style={{ margin: "0 0 8px", color: "var(--text)" }}>Drafts</h3>
+              <div className="edit-picker-grid" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
+                {drafts.map((item: any) => (
+                  <div key={item.id} className="edit-picker-tile">
+                    <img src={props.assetUrl(item.path)} alt={item.name} />
+                    <span>{item.name}</span>
+                    <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                      <button type="button" className="quiet-button" style={{ flex: 1 }} onClick={() => props.onOpenEdit?.(item)}>Open editor</button>
+                      <button type="button" className="quiet-button" onClick={(e) => { e.stopPropagation(); try { localStorage.removeItem(`edit:draft:${item.id}`); } catch {} props.onNotice?.("Draft removed"); }}>Remove</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
         {filtered.length>0 ? (<div className="edit-picker-grid">{filtered.map((item:any)=> {
   const hasDraft = (() => { try { return !!localStorage.getItem(`edit:draft:${item.id}`); } catch { return false; } })();
   return (
-    <button key={item.id} type="button" className="edit-picker-tile" onClick={()=>props.onOpenEdit?.(item)}>
+    <div key={item.id} className="edit-picker-tile">
       <img src={props.assetUrl(item.path)} alt={item.name}/>
       <span>{item.name}</span>
       {hasDraft && <span className="draft-badge">Draft</span>}
-      {hasDraft && <span className="draft-remove" onClick={(e) => { e.stopPropagation(); try { localStorage.removeItem(`edit:draft:${item.id}`); } catch {} props.onNotice?.("Draft removed"); }} title="Remove draft">×</span>}
-    </button>
+      <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+        <button type="button" className="quiet-button" style={{ flex: 1 }} onClick={() => props.onOpenEdit?.(item)}>Open editor</button>
+        {hasDraft && <button type="button" className="quiet-button" onClick={(e) => { e.stopPropagation(); try { localStorage.removeItem(`edit:draft:${item.id}`); } catch {} props.onNotice?.("Draft removed"); }}>Remove draft</button>}
+      </div>
+    </div>
   );
 })}</div>) : (<div className="viewer-empty-state"><div style={{ marginBottom: 16 }}><BrandMark size={56} /></div><h2>No photos found</h2><p>Import a folder or browse from disk.</p></div>) }
       </div>
@@ -2912,7 +2936,7 @@ function EditScreen(props: any) {
             </label>
           ))}
           <div className="edit-footer">
-            <button className="quiet-button" type="button" onClick={() => { props.onSaveDraft?.(); props.onClose(); }}>Change photo</button>
+            <button className="quiet-button" type="button" onClick={() => { props.onSaveDraft?.(); props.onClose(); }}>Select photo</button>
             <button className="quiet-button" type="button" onClick={props.onReset}>Reset</button>
             <button className="quiet-button" type="button" onClick={props.onClearDraft}>Discard draft</button>
             <button className="primary-button" type="button" onClick={props.onExport}>Export edited copy</button>

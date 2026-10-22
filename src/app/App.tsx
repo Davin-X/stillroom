@@ -2815,6 +2815,7 @@ function ViewerScreen(props: any) {
 
 function EditScreen(props: any) {
   const [pickerQuery, setPickerQuery] = useState("");
+  const [confirmReplace, setConfirmReplace] = useState(false);
   const stageRef = useRef<any>(null);
   const [drag, setDrag] = useState<any>(null);
   const values = props.values || {};
@@ -2949,7 +2950,8 @@ function EditScreen(props: any) {
             <button className="quiet-button" type="button" onClick={props.onReset}>Reset</button>
             <button className="quiet-button" type="button" onClick={props.onClearDraft}>Discard draft</button>
             <button className="quiet-button" type="button" onClick={props.onSaveDraft}>Save draft</button>
-            <button className="quiet-button" type="button" style={{ color: "#d33" }} onClick={() => props.onExport(true)}>Replace original</button>
+            <button className="quiet-button" type="button" style={{ color: confirmReplace ? "#fff" : "#d33", background: confirmReplace ? "#d33" : "transparent" }} onClick={() => { if (confirmReplace) { setConfirmReplace(false); props.onExport(true); } else { setConfirmReplace(true); } }}>{confirmReplace ? "Confirm replace?" : "Replace original"}</button>
+            {confirmReplace && <button className="quiet-button" type="button" onClick={() => setConfirmReplace(false)}>Cancel</button>}
             <button className="primary-button" type="button" onClick={() => props.onExport(false)}>Save copy</button>
           </div>
         </aside>

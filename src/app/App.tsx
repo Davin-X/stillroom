@@ -1377,6 +1377,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             unlocked={vault.unlocked}
             items={vault.items}
             autoLock={vault.autoLockMinutes}
+            assetUrl={assetUrl}
             onUnlock={vault.unlock}
             onLock={vault.lock}
             onAddItems={(ids: any) => { vault.addItems(ids); }}

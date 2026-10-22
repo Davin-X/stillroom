@@ -3343,6 +3343,7 @@ function ExploreScreen(props: any) {
     const val = q.trim();
     setQueryState(val);
     library.setQuery(val);
+    library.setFilter("All");
     if (val) saveRecent(val);
     props.onNavigate("Library");
   };

@@ -1201,6 +1201,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             onOpenAlbums={() => openScreen("Albums")}
             onAddItems={(albumId: string) => addItemsToAlbum(albumId)}
             onOpenAlbumPicker={(itemIds?: string[]) => openAlbumPicker(itemIds)}
+            onAddToVault={vault.unlocked ? (ids: string[]) => vault.addItems(ids) : undefined}
             onAlbumMenu={(e: React.MouseEvent) => {
               const album = library.albums.find((a: any) => a.id === library.activeAlbum);
               if (album) openAlbumMenu(album, e);
@@ -1382,6 +1383,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             onRemoveItems={vault.removeItems}
             onToggleEnabled={(e: any) => vault.toggleEnabled(e)}
             onSetAutoLock={(m: any) => vault.setAutoLock(m)}
+            onNavigate={setScreen}
             notice={showNotice}
           />}
 
@@ -2410,6 +2412,16 @@ function LibraryScreen(props: any) {
               >
                 <AlbumsIcon size={13} /> Add to album
               </button>
+              {props.onAddToVault && (
+                <button
+                  type="button"
+                  className="selection-bar-action"
+                  onClick={() => { props.onAddToVault(props.selectedIds); props.onClearSelection?.(); }}
+                  title="Add selected items to the vault"
+                >
+                  <LockIcon size={13} /> Add to vault
+                </button>
+              )}
               {inAlbum && (
                 <button
                   type="button"
@@ -3169,7 +3181,10 @@ function VaultScreen(props: any) {
       <div style={{ maxWidth: 760, margin: "0 auto", width: "100%" }}>
         <div className="page-heading">
           <div><p className="eyebrow">PRIVATE VAULT</p><h1>Vault Contents</h1><p className="page-subtitle">{props.items.length} protected items</p></div>
-          <button className="quiet-button" type="button" onClick={props.onLock}>Lock vault</button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="quiet-button" type="button" onClick={() => props.onNavigate?.("Library")}>Add from Library</button>
+            <button className="quiet-button" type="button" onClick={props.onLock}>Lock vault</button>
+          </div>
         </div>
         <div className="vault-settings">
           <div><b>Auto-lock</b><small>Lock after {props.autoLock} minutes of inactivity</small></div>
@@ -3183,7 +3198,12 @@ function VaultScreen(props: any) {
               <i>Remove</i>
             </button>
           ))}
-          {props.items.length === 0 && <p className="vault-empty">No items in vault. Select items in Library and add them here.</p>}
+          {props.items.length === 0 && (
+            <div className="vault-empty">
+              <p>No items in vault. Select items in Library and add them here.</p>
+              <button className="primary-button" type="button" onClick={() => props.onNavigate?.("Library")}>Browse Library</button>
+            </div>
+          )}
         </div>
       </div>
     </div>

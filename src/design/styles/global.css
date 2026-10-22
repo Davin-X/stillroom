@@ -1355,3 +1355,4 @@ body {
 .edit-controls { max-height: 80vh; overflow-y: auto; }
 .editor-layout { align-items: start; }
 @media (max-width: 900px) { .editor-layout { grid-template-columns: 1fr; } .edit-controls { max-height: none; overflow: visible; } .edit-canvas { min-height: 320px; } }
+.edit-page { overflow-y: auto; max-height: calc(100vh - 60px); }

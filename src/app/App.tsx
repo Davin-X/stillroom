@@ -44,9 +44,9 @@ import { SourcesManager } from "../design/components/SourcesManager";
 import { SlideshowOverlay } from "../design/components/SlideshowOverlay";
 import { ContextMenu } from "../design/components/ContextMenu";
 import { BrandMark } from "../design/components/BrandMark";
-import { GearIcon, SunIcon, MoonIcon, LibraryIcon, AlbumsIcon, ViewerIcon, ExploreIcon, DuplicatesIcon, EditIcon, BatchIcon, VaultIcon, SearchIcon, PlusIcon, MinusIcon, MoreIcon, InspectorIcon, FolderIcon, GridIcon, OverviewIcon, ColumnsIcon, DetailsIcon, TimelineIcon, HeartIcon, EyeIcon, EyeOffIcon, FullscreenIcon, RotateIcon, CropIcon, FlipIcon, PlayIcon, PauseIcon, SparkleIcon, UsersIcon, TagIcon, ImageOffIcon, LockIcon, ShareIcon, CheckIcon } from "../design/components/icons";
+import { GearIcon, SunIcon, MoonIcon, LibraryIcon, AlbumsIcon, ViewerIcon, DuplicatesIcon, EditIcon, BatchIcon, VaultIcon, SearchIcon, PlusIcon, MinusIcon, MoreIcon, InspectorIcon, FolderIcon, GridIcon, OverviewIcon, ColumnsIcon, DetailsIcon, TimelineIcon, HeartIcon, EyeIcon, EyeOffIcon, FullscreenIcon, RotateIcon, CropIcon, FlipIcon, PlayIcon, PauseIcon, SparkleIcon, UsersIcon, TagIcon, ImageOffIcon, LockIcon, ShareIcon, CheckIcon } from "../design/components/icons";
 
-type Screen = "Library" | "Albums" | "Viewer" | "Explore" | "Duplicates" | "Edit" | "Batch" | "Vault" | "Settings";
+type Screen = "Library" | "Albums" | "Viewer" | "Duplicates" | "Edit" | "Batch" | "Vault" | "Settings";
 
 const initialEdits = { exposure: 0, contrast: 0, warmth: 0, shadows: 0, highlights: 0, saturation: 0, rotation: 0, flip: false };
 
@@ -1070,7 +1070,6 @@ handlersRef.current = { importFolder, importFiles, showNotice };
                 { label: "Library", Icon: LibraryIcon, screen: "Library" as Screen },
                 { label: "Albums", Icon: AlbumsIcon, screen: "Albums" as Screen },
                 { label: "Viewer", Icon: ViewerIcon, screen: "Viewer" as Screen },
-                { label: "Explore", Icon: ExploreIcon, screen: "Explore" as Screen },
                 { label: "Duplicates", Icon: DuplicatesIcon, screen: "Duplicates" as Screen },
                 { label: "Edit", Icon: EditIcon, screen: "Edit" as Screen },
                 { label: "Batch", Icon: BatchIcon, screen: "Batch" as Screen },
@@ -1380,7 +1379,6 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             notice={showNotice}
           />}
 
-          {screen === "Explore" && <ExploreScreen items={library.items.filter((i: any) => !i.hidden)} assetUrl={assetUrl} onNavigate={setScreen} />}
 
           {screen === "Duplicates" && <DuplicatesScreen
             groups={library.duplicates}
@@ -3316,117 +3314,6 @@ function AlbumsScreen(props: any) {
               <span className="album-card-name">New album</span>
             </span>
           </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ExploreScreen(props: any) {
-  const library = useLibraryStore();
-  const [query, setQueryState] = React.useState("");
-  const [recent, setRecent] = React.useState<string[]>(() => {
-    try { return JSON.parse(localStorage.getItem("explore:recent") || "[]"); } catch { return []; }
-  });
-
-  const items = props.items || [];
-
-  const saveRecent = (q: string) => {
-    const trimmed = q.trim();
-    if (!trimmed) return;
-    const next = [trimmed, ...recent.filter((r) => r !== trimmed)].slice(0, 8);
-    setRecent(next);
-    try { localStorage.setItem("explore:recent", JSON.stringify(next)); } catch {}
-  };
-
-  const runSearch = (q: string) => {
-    const val = q.trim();
-    setQueryState(val);
-    library.setQuery(val);
-    library.setFilter("All");
-    if (val) saveRecent(val);
-    props.onNavigate("Library");
-  };
-
-  const applyFilter = (filter: Filter) => {
-    library.setFilter(filter);
-    props.onNavigate("Library");
-  };
-
-  const extensions = React.useMemo(() => [...new Set(items.map((i: any) => (i.extension || "").toUpperCase()).filter(Boolean))].slice(0, 12), [items]);
-  const tags = React.useMemo(() => [...new Set(items.flatMap((i: any) => i.tags || []))].slice(0, 12), [items]);
-  const suggestions = React.useMemo(() => [...new Set([...extensions, ...tags])].slice(0, 12), [extensions, tags]);
-  const previewItems = React.useMemo(() => items.slice(0, 8), [items]);
-
-  const clearRecent = () => {
-    setRecent([]);
-    try { localStorage.removeItem("explore:recent"); } catch {}
-  };
-
-  return (
-    <div className="feature-page">
-      <div className="page-heading">
-        <div><p className="eyebrow">SEARCH & DISCOVERY</p><h1>Explore</h1><p className="page-subtitle">Find photos by name, path, tag, or format.</p></div>
-      </div>
-
-      <div className="semantic-hero" style={{ padding: "16px 20px" }}>
-        <div className="semantic-search" style={{ margin: "0 auto" }}><SearchIcon size={15} /><input value={query} onChange={(e) => setQueryState(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") runSearch(query); else if (e.key === "Escape" && query) { setQueryState(""); library.setQuery(""); } }} placeholder="Search filename, folder, tag, or format" /><kbd>↵</kbd></div>
-        <div className="search-suggestions" style={{ justifyContent: "center" }}>
-          {suggestions.length ? suggestions.map((s: any) => <button type="button" key={s} onClick={() => runSearch(s)}>{s}</button>) : <small>Open a folder to index names.</small>}
-        </div>
-      </div>
-
-      {recent.length > 0 && (
-        <div className="feature-card" style={{ padding: "12px 16px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>Recent searches</h3>
-            <button type="button" className="quiet-button" onClick={clearRecent}>Clear</button>
-          </div>
-          <div className="search-suggestions" style={{ justifyContent: "flex-start" }}>{recent.map((r: any) => <button type="button" key={r} onClick={() => runSearch(r)}>{r}</button>)}</div>
-        </div>
-      )}
-
-      <div className="feature-card" style={{ padding: "12px 16px" }}>
-        <h3 style={{ margin: "0 0 8px" }}>Smart filters</h3>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          {[
-            { label: "Favorites", value: "Favorites", count: items.filter((i: any) => i.favorite).length },
-            { label: "Videos", value: "Videos", count: items.filter((i: any) => i.kind === "video").length },
-            { label: "RAW", value: "RAW", count: items.filter((i: any) => i.kind === "raw").length },
-            { label: "Hidden", value: "Hidden", count: items.filter((i: any) => i.hidden).length },
-          ].map((f: any) => (
-            <button key={f.value} type="button" className="quiet-button" onClick={() => applyFilter(f.value)} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-              {f.label} <span style={{ opacity: 0.6 }}>{f.count}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {(tags.length > 0 || extensions.length > 0) && (
-        <div className="feature-card" style={{ padding: "12px 16px" }}>
-          <h3 style={{ margin: "0 0 8px" }}>Tags & formats</h3>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {[...tags, ...extensions].map((t: any) => (
-              <button key={t} type="button" className="quiet-button" onClick={() => runSearch(t)}>{t}</button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {previewItems.length > 0 && (
-        <div className="feature-card" style={{ padding: "12px 16px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>Recently added</h3>
-            <button type="button" className="quiet-button" onClick={() => props.onNavigate("Library")}>View all</button>
-          </div>
-          <div className="duplicate-grid">
-            {previewItems.map((item: any) => (
-              <div className="duplicate-card" key={item.id} onClick={() => { library.inspectItem(item.id); props.onNavigate("Library"); }}>
-                {item.kind === "photo" ? <img src={props.assetUrl(item.path)} alt={item.name} /> : <div className="duplicate-nonimage"><KindBadge kind={item.kind} /></div>}
-                <div><span>{item.name}</span><small>{formatBytesSimple(item.size)}</small></div>
-              </div>
-            ))}
-          </div>
         </div>
       )}
     </div>

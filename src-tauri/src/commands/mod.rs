@@ -170,22 +170,6 @@ pub struct DuplicateGroup {
     pub items: Vec<MediaItem>,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VaultSession {
-    pub unlocked: bool,
-    pub expires_at: Option<i64>,
-    pub method: String,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VaultStatus {
-    pub enabled: bool,
-    pub locked: bool,
-    pub auto_lock_minutes: i32,
-}
-
 #[derive(Deserialize, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct PartialSettings {
@@ -210,10 +194,6 @@ pub struct PartialSettings {
     pub pair_raw_jpeg: Option<bool>,
     pub stack_bursts: Option<bool>,
     pub stack_live_photos: Option<bool>,
-    pub vault_enabled: Option<bool>,
-    pub vault_unlock_method: Option<String>,
-    pub vault_auto_lock_minutes: Option<i32>,
-    pub vault_lock_on_sleep: Option<bool>,
     pub strip_gps_on_export: Option<bool>,
     pub strip_all_metadata_on_export: Option<bool>,
     pub allow_network_requests: Option<bool>,
@@ -248,10 +228,6 @@ pub struct AppSettings {
     pub pair_raw_jpeg: bool,
     pub stack_bursts: bool,
     pub stack_live_photos: bool,
-    pub vault_enabled: bool,
-    pub vault_unlock_method: String,
-    pub vault_auto_lock_minutes: i32,
-    pub vault_lock_on_sleep: bool,
     pub strip_gps_on_export: bool,
     pub strip_all_metadata_on_export: bool,
     pub allow_network_requests: bool,
@@ -286,10 +262,6 @@ impl Default for AppSettings {
             pair_raw_jpeg: true,
             stack_bursts: true,
             stack_live_photos: true,
-            vault_enabled: false,
-            vault_unlock_method: "both".to_string(),
-            vault_auto_lock_minutes: 5,
-            vault_lock_on_sleep: true,
             strip_gps_on_export: true,
             strip_all_metadata_on_export: false,
             allow_network_requests: false,
@@ -307,11 +279,13 @@ impl Default for AppSettings {
 /// Album rows with their item count folded in, so `Album.item_count` is always a
 /// real column on the result set.
 const ALBUM_SELECT: &str = "SELECT a.id, a.name, a.color_index, a.created_at, a.updated_at, \
-     (SELECT COUNT(*) FROM album_items ai WHERE ai.album_id = a.id) AS item_count FROM albums a";
+     (SELECT COUNT(*) FROM album_items ai JOIN media_items m ON m.id = ai.media_id \
+      WHERE ai.album_id = a.id AND m.hidden = 0) AS item_count FROM albums a";
 
 /// Tag rows with their item count folded in, mirroring [`ALBUM_SELECT`].
 const TAG_SELECT: &str = "SELECT t.id, t.name, t.color_index, t.created_at, \
-     (SELECT COUNT(*) FROM media_tags mt WHERE mt.tag_id = t.id) AS item_count FROM tags t";
+     (SELECT COUNT(*) FROM media_tags mt JOIN media_items m ON m.id = mt.media_id \
+      WHERE mt.tag_id = t.id AND m.hidden = 0) AS item_count FROM tags t";
 
 fn get_db(state: &State<'_, AppState>) -> Result<SqlitePool, String> {
     let guard = state.db.lock().map_err(|e| e.to_string())?;
@@ -374,8 +348,8 @@ fn kind_for_ext(ext: &str) -> &'static str {
 /// Add one file to the catalog and return it with its on-disk size.
 ///
 /// Folder scans and direct file imports share this so both paths keep the same
-/// stable id and the same conflict rules (favorite/hidden/vault state wins over
-/// a refreshed file fact).
+/// stable id and the same conflict rules (favorite/hidden state wins over a
+/// refreshed file fact).
 async fn import_media_file(
     db: &SqlitePool,
     path: &Path,
@@ -419,14 +393,14 @@ async fn import_media_file(
         modified_at,
     );
 
-    // Upsert on the stable id. `favorite`, `hidden` and `in_vault` are left out
-    // of the UPDATE clause so a re-import refreshes file facts without
-    // discarding the user's own state.
+    // Upsert on the stable id. `favorite` and `hidden` are left out of the
+    // UPDATE clause so a re-import refreshes file facts without discarding the
+    // user's own state.
     sqlx::query(
         r#"INSERT INTO media_items
            (id, path, name, extension, kind, size, modified_at, captured_at,
-            width, height, created_at, updated_at, favorite, hidden, in_vault)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0)
+            width, height, created_at, updated_at, favorite, hidden)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
            ON CONFLICT(id) DO UPDATE SET
                path = excluded.path,
                name = excluded.name,
@@ -808,7 +782,7 @@ pub async fn get_library_folders(state: State<'_, AppState>) -> Result<Vec<Libra
         .await
         .map_err(|e| e.to_string())?;
 
-    let rows = sqlx::query("SELECT path, size FROM media_items")
+    let rows = sqlx::query("SELECT path, size FROM media_items WHERE hidden = 0")
         .fetch_all(&db)
         .await
         .map_err(|e| e.to_string())?;
@@ -918,7 +892,6 @@ pub async fn remove_library_folder(
         for statement in [
             "DELETE FROM media_tags WHERE media_id = ?",
             "DELETE FROM album_items WHERE media_id = ?",
-            "DELETE FROM vault_items WHERE media_id = ?",
             "DELETE FROM media_items WHERE id = ?",
         ] {
             sqlx::query(statement)
@@ -1173,59 +1146,6 @@ pub async fn compute_hash(path: String, state: State<'_, AppState>) -> Result<St
 }
 
 #[tauri::command]
-pub async fn vault_unlock(biometric: bool, state: State<'_, AppState>) -> Result<VaultSession, String> {
-    let _ = state;
-    Ok(VaultSession { unlocked: true, expires_at: Some(now_ms() + 5 * 60 * 1000), method: if biometric { "touchid" } else { "password" }.to_string() })
-}
-
-#[tauri::command]
-pub async fn vault_lock(state: State<'_, AppState>) -> Result<(), String> { let _ = state; Ok(()) }
-
-#[tauri::command]
-pub async fn vault_add_items(item_ids: Vec<String>, state: State<'_, AppState>) -> Result<(), String> {
-    let db = get_db(&state)?;
-    for item_id in &item_ids {
-        sqlx::query("UPDATE media_items SET in_vault = 1, updated_at = ? WHERE id = ?")
-            .bind(now_ms())
-            .bind(item_id)
-            .execute(&db)
-            .await
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn vault_remove_items(item_ids: Vec<String>, state: State<'_, AppState>) -> Result<(), String> {
-    let db = get_db(&state)?;
-    for item_id in &item_ids {
-        sqlx::query("UPDATE media_items SET in_vault = 0, updated_at = ? WHERE id = ?")
-            .bind(now_ms())
-            .bind(item_id)
-            .execute(&db)
-            .await
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn vault_list_items(state: State<'_, AppState>) -> Result<Vec<MediaItem>, String> {
-    let db = get_db(&state)?;
-    let items = sqlx::query_as::<_, MediaItem>("SELECT * FROM media_items WHERE in_vault = 1 ORDER BY modified_at DESC")
-        .fetch_all(&db)
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(items)
-}
-
-#[tauri::command]
-pub async fn vault_get_status(state: State<'_, AppState>) -> Result<VaultStatus, String> {
-    let _ = state;
-    Ok(VaultStatus { enabled: false, locked: true, auto_lock_minutes: 5 })
-}
-
-#[tauri::command]
 pub async fn write_finder_tags(path: String, tags: Vec<String>, state: State<'_, AppState>) -> Result<(), String> {
     let _ = (path, tags, state);
     Ok(())
@@ -1265,10 +1185,6 @@ fn apply_setting(settings: &mut AppSettings, key: &str, value: &str) {
         "pair_raw_jpeg" => settings.pair_raw_jpeg = value.parse().unwrap_or(true),
         "stack_bursts" => settings.stack_bursts = value.parse().unwrap_or(true),
         "stack_live_photos" => settings.stack_live_photos = value.parse().unwrap_or(true),
-        "vault_enabled" => settings.vault_enabled = value.parse().unwrap_or(false),
-        "vault_unlock_method" => settings.vault_unlock_method = value.to_string(),
-        "vault_auto_lock_minutes" => settings.vault_auto_lock_minutes = value.parse().unwrap_or(5),
-        "vault_lock_on_sleep" => settings.vault_lock_on_sleep = value.parse().unwrap_or(true),
         "strip_gps_on_export" => settings.strip_gps_on_export = value.parse().unwrap_or(true),
         "strip_all_metadata_on_export" => settings.strip_all_metadata_on_export = value.parse().unwrap_or(false),
         "allow_network_requests" => settings.allow_network_requests = value.parse().unwrap_or(false),
@@ -1336,10 +1252,6 @@ pub async fn save_settings(patch: PartialSettings, state: State<'_, AppState>) -
     if let Some(v) = patch.pair_raw_jpeg { settings.pair_raw_jpeg = v; }
     if let Some(v) = patch.stack_bursts { settings.stack_bursts = v; }
     if let Some(v) = patch.stack_live_photos { settings.stack_live_photos = v; }
-    if let Some(v) = patch.vault_enabled { settings.vault_enabled = v; }
-    if let Some(v) = patch.vault_unlock_method { settings.vault_unlock_method = v; }
-    if let Some(v) = patch.vault_auto_lock_minutes { settings.vault_auto_lock_minutes = v; }
-    if let Some(v) = patch.vault_lock_on_sleep { settings.vault_lock_on_sleep = v; }
     if let Some(v) = patch.strip_gps_on_export { settings.strip_gps_on_export = v; }
     if let Some(v) = patch.strip_all_metadata_on_export { settings.strip_all_metadata_on_export = v; }
     if let Some(v) = patch.allow_network_requests { settings.allow_network_requests = v; }
@@ -1371,10 +1283,6 @@ pub async fn save_settings(patch: PartialSettings, state: State<'_, AppState>) -
         ("pair_raw_jpeg", settings.pair_raw_jpeg.to_string()),
         ("stack_bursts", settings.stack_bursts.to_string()),
         ("stack_live_photos", settings.stack_live_photos.to_string()),
-        ("vault_enabled", settings.vault_enabled.to_string()),
-        ("vault_unlock_method", settings.vault_unlock_method.clone()),
-        ("vault_auto_lock_minutes", settings.vault_auto_lock_minutes.to_string()),
-        ("vault_lock_on_sleep", settings.vault_lock_on_sleep.to_string()),
         ("strip_gps_on_export", settings.strip_gps_on_export.to_string()),
         ("strip_all_metadata_on_export", settings.strip_all_metadata_on_export.to_string()),
         ("allow_network_requests", settings.allow_network_requests.to_string()),
@@ -1402,7 +1310,7 @@ pub async fn get_version() -> Result<String, String> {
     Ok(env!("CARGO_PKG_VERSION").to_string())
 }
 
-/// Purge the entire library catalog (media items, tags, albums, vault items,
+/// Purge the entire library catalog (media items, tags, albums, folders and
 /// library folders, import sessions) while leaving original media files on disk.
 /// This is irreversible through the UI.
 #[tauri::command]
@@ -1417,10 +1325,6 @@ pub async fn delete_library_database(state: State<'_, AppState>) -> Result<(), S
         .await
         .map_err(|e| e.to_string())?;
     sqlx::query("DELETE FROM album_items")
-        .execute(&db)
-        .await
-        .map_err(|e| e.to_string())?;
-    sqlx::query("DELETE FROM vault_items")
         .execute(&db)
         .await
         .map_err(|e| e.to_string())?;

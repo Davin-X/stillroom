@@ -1,7 +1,80 @@
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
+import { useMemo, useSyncExternalStore } from "react";
 import type { EditValues, MediaItem } from "../types/media";
 import { defaultEdits } from "../commands/tauri";
+
+export interface DraftTransform {
+  rotation: number;
+  flip: boolean;
+}
+
+const draftKey = (itemId: string) => `edit:draft:${itemId}`;
+
+// Previews subscribe to a small revision counter instead of reading every
+// draft on every render. The counter only changes when a draft is written or
+// removed, so a flip in Edit updates the grid, viewer, and slideshow together.
+let draftRevision = 0;
+const draftListeners = new Set<() => void>();
+
+function notifyDraftChanged() {
+  draftRevision += 1;
+  draftListeners.forEach((listener) => listener());
+}
+
+function persistDraft(itemId: string, values: EditValues, history: EditValues[], historyIndex: number) {
+  if (typeof localStorage !== "undefined") {
+    try {
+      localStorage.setItem(draftKey(itemId), JSON.stringify({ values, history, historyIndex }));
+    } catch {
+      // A full or unavailable localStorage should not break editing.
+    }
+  }
+  notifyDraftChanged();
+}
+
+export function clearEditDraft(itemId: string) {
+  if (typeof localStorage !== "undefined") {
+    try { localStorage.removeItem(draftKey(itemId)); } catch {}
+  }
+  notifyDraftChanged();
+}
+
+function subscribeDraft(listener: () => void) {
+  draftListeners.add(listener);
+  return () => { draftListeners.delete(listener); };
+}
+
+/** Read the current rotation/flip for every item that has an edit draft. */
+export function useDraftTransforms(): Map<string, DraftTransform> {
+  const revision = useSyncExternalStore(subscribeDraft, () => draftRevision, () => draftRevision);
+  return useMemo(() => {
+    const transforms = new Map<string, DraftTransform>();
+    if (typeof localStorage === "undefined") return transforms;
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (!key || !key.startsWith("edit:draft:")) continue;
+      try {
+        const parsed = JSON.parse(localStorage.getItem(key) || "");
+        const values = parsed?.values;
+        if (!values) continue;
+        const rotation = ((Number(values.rotation) || 0) % 360 + 360) % 360;
+        const flip = Boolean(values.flip);
+        if (rotation !== 0 || flip) {
+          transforms.set(key.slice("edit:draft:".length), { rotation, flip });
+        }
+      } catch {
+        // Ignore drafts that cannot be parsed.
+      }
+    }
+    return transforms;
+  }, [revision]);
+}
+
+export function draftTransformStyle(transform?: DraftTransform) {
+  if (!transform || (!transform.rotation && !transform.flip)) return undefined;
+  return `rotate(${transform.rotation}deg) scaleX(${transform.flip ? -1 : 1})`;
+}
 
 interface EditState {
   // State
@@ -98,9 +171,7 @@ export const useEditStore = create<EditState>()(
 
       saveDraft: () => {
         const { item, values, history, historyIndex } = get();
-        if (item && typeof localStorage !== "undefined") {
-          try { localStorage.setItem(`edit:draft:${item.id}`, JSON.stringify({ values, history, historyIndex })); } catch {}
-        }
+        if (item) persistDraft(item.id, values, history, historyIndex);
       },
 
       setValue: (key, value) => {
@@ -110,9 +181,7 @@ export const useEditStore = create<EditState>()(
         newHistory.push(next);
         if (newHistory.length > 50) newHistory.shift();
         set({ values: next, history: newHistory, historyIndex: newHistory.length - 1 });
-        if (item && typeof localStorage !== "undefined") {
-          try { localStorage.setItem(`edit:draft:${item.id}`, JSON.stringify({ values: next, history: newHistory, historyIndex: newHistory.length - 1 })); } catch {}
-        }
+        if (item) persistDraft(item.id, next, newHistory, newHistory.length - 1);
       },
 
       setValues: (partial) => {
@@ -122,9 +191,7 @@ export const useEditStore = create<EditState>()(
         newHistory.push(next);
         if (newHistory.length > 50) newHistory.shift();
         set({ values: next, history: newHistory, historyIndex: newHistory.length - 1 });
-        if (item && typeof localStorage !== "undefined") {
-          try { localStorage.setItem(`edit:draft:${item.id}`, JSON.stringify({ values: next, history: newHistory, historyIndex: newHistory.length - 1 })); } catch {}
-        }
+        if (item) persistDraft(item.id, next, newHistory, newHistory.length - 1);
       },
 
       reset: () => {
@@ -132,16 +199,12 @@ export const useEditStore = create<EditState>()(
         const newHistory = history.slice(0, historyIndex + 1);
         newHistory.push(defaultEdits);
         set({ values: defaultEdits, crop: defaultCrop, history: newHistory, historyIndex: newHistory.length - 1 });
-        if (item && typeof localStorage !== "undefined") {
-          try { localStorage.removeItem(`edit:draft:${item.id}`); } catch {}
-        }
+        if (item) clearEditDraft(item.id);
       },
 
       clearDraft: () => {
         const { item } = get();
-        if (item && typeof localStorage !== "undefined") {
-          try { localStorage.removeItem(`edit:draft:${item.id}`); } catch {}
-        }
+        if (item) clearEditDraft(item.id);
         set({ values: defaultEdits, crop: defaultCrop, history: [defaultEdits], historyIndex: 0 });
       },
 
@@ -150,9 +213,7 @@ export const useEditStore = create<EditState>()(
         const newHistory = history.slice(0, historyIndex + 1);
         newHistory.push(autoEdits);
         set({ values: autoEdits, history: newHistory, historyIndex: newHistory.length - 1 });
-        if (item && typeof localStorage !== "undefined") {
-          try { localStorage.setItem(`edit:draft:${item.id}`, JSON.stringify({ values: autoEdits, history: newHistory, historyIndex: newHistory.length - 1 })); } catch {}
-        }
+        if (item) persistDraft(item.id, autoEdits, newHistory, newHistory.length - 1);
       },
 
       rotate: (degrees) => {
@@ -161,9 +222,7 @@ export const useEditStore = create<EditState>()(
         const newHistory = history.slice(0, historyIndex + 1);
         newHistory.push(next);
         set({ values: next, history: newHistory, historyIndex: newHistory.length - 1 });
-        if (item && typeof localStorage !== "undefined") {
-          try { localStorage.setItem(`edit:draft:${item.id}`, JSON.stringify({ values: next, history: newHistory, historyIndex: newHistory.length - 1 })); } catch {}
-        }
+        if (item) persistDraft(item.id, next, newHistory, newHistory.length - 1);
       },
 
       flip: () => {
@@ -172,9 +231,7 @@ export const useEditStore = create<EditState>()(
         const newHistory = history.slice(0, historyIndex + 1);
         newHistory.push(next);
         set({ values: next, history: newHistory, historyIndex: newHistory.length - 1 });
-        if (item && typeof localStorage !== "undefined") {
-          try { localStorage.setItem(`edit:draft:${item.id}`, JSON.stringify({ values: next, history: newHistory, historyIndex: newHistory.length - 1 })); } catch {}
-        }
+        if (item) persistDraft(item.id, next, newHistory, newHistory.length - 1);
       },
 
       setCrop: (partial) => set((s) => ({ crop: { ...s.crop, ...partial } })),
@@ -186,9 +243,7 @@ export const useEditStore = create<EditState>()(
         if (historyIndex > 0) {
           const nextIndex = historyIndex - 1;
           set({ values: history[nextIndex], historyIndex: nextIndex });
-          if (item && typeof localStorage !== "undefined") {
-            try { localStorage.setItem(`edit:draft:${item.id}`, JSON.stringify({ values: history[nextIndex], history: history, historyIndex: nextIndex })); } catch {}
-          }
+          if (item) persistDraft(item.id, history[nextIndex], history, nextIndex);
         }
       },
 
@@ -197,9 +252,7 @@ export const useEditStore = create<EditState>()(
         if (historyIndex < history.length - 1) {
           const nextIndex = historyIndex + 1;
           set({ values: history[nextIndex], historyIndex: nextIndex });
-          if (item && typeof localStorage !== "undefined") {
-            try { localStorage.setItem(`edit:draft:${item.id}`, JSON.stringify({ values: history[nextIndex], history: history, historyIndex: nextIndex })); } catch {}
-          }
+          if (item) persistDraft(item.id, history[nextIndex], history, nextIndex);
         }
       },
 

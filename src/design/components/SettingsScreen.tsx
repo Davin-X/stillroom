@@ -32,12 +32,6 @@ const STARTUP_VIEWS = [
   { id: "last", label: "Last View" },
 ] as const;
 
-const VAULT_METHODS = [
-  { id: "both", label: "Password & Touch ID" },
-  { id: "password", label: "Password Only" },
-  { id: "touchid", label: "Touch ID Only" },
-] as const;
-
 export function SettingsScreen(props: {
   onAddFolder?: () => void;
   onRemoveFolder?: (folder: LibraryFolder) => void;
@@ -58,9 +52,6 @@ export function SettingsScreen(props: {
   const systemDark = useSystemDark();
   const isDark = appearance === "dark" || (appearance === "system" && systemDark);
   const defaultLayout = useDefaultLayout();
-  const vaultEnabled = useSettingsStore((s) => s.vaultEnabled);
-  const vaultAutoLock = useSettingsStore((s) => s.vaultAutoLockMinutes);
-  const vaultMethod = useSettingsStore((s) => s.vaultUnlockMethod);
   const stripGps = useSettingsStore((s) => s.stripGpsOnExport);
   const stripAllMeta = useSettingsStore((s) => s.stripAllMetadataOnExport);
   const autoImport = useSettingsStore((s) => s.autoImport);
@@ -277,13 +268,9 @@ export function SettingsScreen(props: {
           onChange={update}
         />}
         {activeTab === "privacy" && <PrivacyPanel
-          vaultEnabled={vaultEnabled}
-          vaultAutoLock={vaultAutoLock}
-          vaultMethod={vaultMethod}
           stripGps={stripGps}
           stripAllMeta={stripAllMeta}
           onChange={update}
-          renderRadioGroup={renderRadioGroup}
         />}
         {activeTab === "advanced" && <AdvancedPanel
           maxCacheSize={maxCacheSize}
@@ -711,85 +698,12 @@ function LibraryPanel(props: {
 }
 
 function PrivacyPanel(props: {
-  vaultEnabled: boolean;
-  vaultAutoLock: number;
-  vaultMethod: string;
   stripGps: boolean;
   stripAllMeta: boolean;
   onChange: (key: any, value: any) => void;
-  renderRadioGroup: any;
 }) {
   return (
     <>
-      <section className="settings-section">
-        <h2 className="settings-section-title">
-          <ShieldIcon size={14} /> Private Vault
-        </h2>
-        <div className="settings-row">
-          <div className="settings-row-label">
-            <b>Enable Vault</b>
-            <span className="settings-row-desc">Encrypt hidden items with Secure Enclave. Requires Touch ID or password to unlock.</span>
-          </div>
-          <div className="settings-row-control">
-            <label className="toggle-switch">
-              <input
-                type="checkbox"
-                checked={props.vaultEnabled}
-                onChange={(e) => props.onChange("vaultEnabled", e.target.checked)}
-              />
-              <span className="toggle-track" />
-            </label>
-          </div>
-        </div>
-        <div className="settings-row">
-          <div className="settings-row-label">
-            <b>Unlock Method</b>
-            <span className="settings-row-desc">How to authenticate when opening the vault</span>
-          </div>
-          <div className="settings-row-control">
-            {props.renderRadioGroup("vaultMethod", props.vaultMethod, VAULT_METHODS, (v: string) => props.onChange("vaultUnlockMethod", v))}
-          </div>
-        </div>
-        <div className="settings-row">
-          <div className="settings-row-label">
-            <b>Auto-lock After</b>
-            <span className="settings-row-desc">Minutes of inactivity before vault locks automatically</span>
-          </div>
-          <div className="settings-row-control" style={{ alignItems: "center" }}>
-            <input
-              type="range"
-              className="settings-slider"
-              min={0}
-              max={60}
-              step={1}
-              value={props.vaultAutoLock}
-              onChange={(e) => props.onChange("vaultAutoLockMinutes", Number(e.target.value))}
-              aria-label="Vault auto-lock timeout in minutes"
-            />
-            <span className="settings-slider-value">
-              {props.vaultAutoLock === 0 ? "Never" : `${props.vaultAutoLock} min`}
-            </span>
-          </div>
-        </div>
-        <div className="settings-row">
-          <div className="settings-row-label">
-            <b>Lock on Sleep</b>
-            <span className="settings-row-desc">Lock vault when Mac sleeps or screen saver starts</span>
-          </div>
-          <div className="settings-row-control">
-            <label className="toggle-switch">
-              <input
-                type="checkbox"
-                checked={true}
-                onChange={(e) => props.onChange("vaultLockOnSleep", e.target.checked)}
-                disabled
-              />
-              <span className="toggle-track" />
-            </label>
-          </div>
-        </div>
-      </section>
-
       <section className="settings-section">
         <h2 className="settings-section-title">
           <ShieldIcon size={14} /> Export Privacy

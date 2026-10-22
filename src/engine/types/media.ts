@@ -20,7 +20,6 @@ export interface MediaItem {
   sha256?: string;                 // Content hash
   favorite: boolean;
   hidden: boolean;
-  inVault: boolean;
   tags: string[];
   albumIds: string[];              // Album IDs this item belongs to
   importSessionId?: string;
@@ -117,20 +116,9 @@ export interface RenderRequest {
   crop?: CropRect;
 }
 
-export interface VaultSession {
-  unlocked: boolean;
-  expiresAt?: number;
-  method: string;
-}
-
-export interface VaultStatus {
-  enabled: boolean;
-  locked: boolean;
-  autoLockMinutes: number;
-}
-export type Filter = "All" | "Photos" | "Videos" | "RAW" | "Favorites" | "Hidden";
+export type Filter = "All" | "Photos" | "Videos" | "RAW" | "Favorites";
 export type LayoutMode = "grid" | "filmstrip" | "overview";
-export type Screen = "Library" | "Viewer" | "Explore" | "Duplicates" | "Edit" | "Batch" | "Vault" | "Slideshow" | "Settings";
+export type Screen = "Library" | "Viewer" | "Explore" | "Duplicates" | "Edit" | "Batch" | "Hidden" | "Slideshow" | "Settings";
 
 export interface LibraryFilter {
   kind?: MediaKind;

@@ -23,6 +23,10 @@ interface LibraryState {
   selectedIds: string[];
   filter: Filter;
   query: string;
+  // Hidden has its own filter/search so travelling through the viewer or back
+  // to Library does not rewrite either screen's view.
+  hiddenFilter: Filter;
+  hiddenQuery: string;
   layout: LayoutMode;
   showInspector: boolean;
   sidebarOpen: boolean;
@@ -31,6 +35,10 @@ interface LibraryState {
   // the media-kind filter; the two compose so "Photos inside Pictures" works.
   activeSource: string | null;
   screen: Screen;
+  // Which collection the viewer navigates when it opens. Hidden items are
+  // deliberately absent from the normal viewer, so the Hidden gallery asks the
+  // viewer to browse the hidden set instead.
+  viewerScope: "library" | "hidden";
 
   // Status
   busy: boolean;
@@ -45,6 +53,7 @@ interface LibraryState {
   viewerSelected: MediaItem | null;
   currentIndex: number;
   viewerIndex: number;
+  hiddenItems: MediaItem[];
   hiddenCount: number;
 
   // Actions - Data Loading
@@ -66,13 +75,17 @@ interface LibraryState {
   selectAll: () => void;
   toggleSelectAll: () => void;
   addToSelection: (id: string) => void;
+  setSelectedIds: (ids: string[]) => void;
 
   // Actions - Filters & View
   setFilter: (filter: Filter) => void;
+  setHiddenFilter: (filter: Filter) => void;
   setActiveSource: (path: string | null) => void;
   setQuery: (query: string) => void;
+  setHiddenQuery: (query: string) => void;
   setLayout: (layout: LayoutMode) => void;
   setScreen: (screen: Screen) => void;
+  setViewerScope: (scope: "library" | "hidden") => void;
   toggleInspector: () => void;
   toggleSidebar: () => void;
   setActiveAlbum: (albumId: string | null) => void;
@@ -112,30 +125,32 @@ interface ExportOptions {
 }
 
 function computeDerived(state: LibraryState) {
-  const { items, filter, query, activeAlbum, activeSource, inspectedId, selectedIds } = state;
-  
-  // Apply filters
-  let visible = [...items];
-  
-  // Hidden items only surface under the Hidden filter; every other view
-  // (including All) leaves them out so the badge counts match the grid.
+  const { items, filter, query, activeAlbum, activeSource, inspectedId, viewerScope } = state;
+
+  // One sort for every derived collection. Hidden items are a separate,
+  // first-class set: they never appear in the normal grid, viewer, album
+  // covers, or counts.
+  const sorted = [...items].sort(
+    (a, b) => (b.capturedAt || b.modifiedAt) - (a.capturedAt || a.modifiedAt),
+  );
+  const hiddenItems = sorted.filter((item) => item.hidden);
+  let visible = sorted.filter((item) => !item.hidden);
+
   visible = visible.filter((item) => {
-    if (filter === "Hidden") return item.hidden;
-    if (item.hidden) return false;
     if (filter === "Photos" && item.kind !== "photo") return false;
     if (filter === "Videos" && item.kind !== "video") return false;
     if (filter === "RAW" && item.kind !== "raw") return false;
     if (filter === "Favorites" && !item.favorite) return false;
     return true;
   });
-  
+
   if (activeAlbum) {
     // Album membership is hydrated onto each item as `albumIds`; the album
     // list itself only carries an item count, so filter by membership rather
     // than expecting the backend to echo every item id back on the album.
     visible = visible.filter((item) => item.albumIds?.includes(activeAlbum));
   }
-  
+
   if (query.trim()) {
     const normalized = query.trim().toLowerCase();
     visible = visible.filter((item) =>
@@ -151,18 +166,16 @@ function computeDerived(state: LibraryState) {
       (item) => item.path === activeSource || item.path.startsWith(prefix),
     );
   }
-  
-  // Sort by captured date desc, then modified desc
-  visible.sort((a, b) => (b.capturedAt || b.modifiedAt) - (a.capturedAt || a.modifiedAt));
-  
-  const sorted = [...items].sort((a, b) => (b.capturedAt || b.modifiedAt) - (a.capturedAt || a.modifiedAt));
+
   const playable = visible.filter((item) => item.kind === "photo" || item.kind === "video");
-  const viewer = sorted.filter((item) => !item.hidden && (item.kind === "photo" || item.kind === "video" || item.kind === "raw"));
+  const viewerPool = viewerScope === "hidden" ? hiddenItems : sorted.filter((item) => !item.hidden);
+  const viewer = viewerPool.filter(
+    (item) => item.kind === "photo" || item.kind === "video" || item.kind === "raw",
+  );
   const viewerSelected = viewer.find((item) => item.id === inspectedId) || viewer[0] || null;
   const currentIndex = Math.max(0, playable.findIndex((item) => item.id === inspectedId));
   const viewerIndex = viewerSelected ? viewer.findIndex((item) => item.id === viewerSelected.id) : -1;
-  const hiddenCount = items.filter((item) => item.hidden).length;
-  
+
   return {
     visibleItems: visible,
     sortedItems: sorted,
@@ -171,7 +184,8 @@ function computeDerived(state: LibraryState) {
     viewerSelected,
     currentIndex,
     viewerIndex,
-    hiddenCount,
+    hiddenItems,
+    hiddenCount: hiddenItems.length,
   };
 }
 
@@ -189,12 +203,15 @@ export const useLibraryStore = create<LibraryState>()(
       selectedIds: [],
       filter: "All",
       query: "",
+      hiddenFilter: "All",
+      hiddenQuery: "",
       layout: "grid",
       showInspector: true,
       sidebarOpen: true,
       activeAlbum: null,
       activeSource: null,
       screen: "Library",
+      viewerScope: "library",
       busy: false,
       progress: null,
       notice: null,
@@ -207,6 +224,7 @@ export const useLibraryStore = create<LibraryState>()(
       viewerSelected: null,
       currentIndex: 0,
       viewerIndex: -1,
+      hiddenItems: [],
       hiddenCount: 0,
 
       // Data Loading
@@ -387,11 +405,20 @@ export const useLibraryStore = create<LibraryState>()(
         get().refreshDerived();
       },
 
-      // Filters & View
-      setFilter: (filter) => {
-        set({ filter, activeAlbum: filter === "Favorites" || filter === "Hidden" ? null : get().activeAlbum });
+      // The Hidden gallery owns its own item list, so it needs a way to replace
+      // the shared selection without going through `visibleItems`.
+      setSelectedIds: (ids) => {
+        set({ selectedIds: [...new Set(ids)] });
         get().refreshDerived();
       },
+
+      // Filters & View
+      setFilter: (filter) => {
+        set({ filter, activeAlbum: filter === "Favorites" ? null : get().activeAlbum });
+        get().refreshDerived();
+      },
+
+      setHiddenFilter: (hiddenFilter) => set({ hiddenFilter }),
 
       setActiveSource: (path) => {
         // Toggle off when the active source is clicked again; picking a source
@@ -406,9 +433,16 @@ export const useLibraryStore = create<LibraryState>()(
         get().refreshDerived();
       },
 
+      setHiddenQuery: (hiddenQuery) => set({ hiddenQuery }),
+
       setLayout: (layout) => set({ layout }),
 
       setScreen: (screen) => set({ screen }),
+
+      setViewerScope: (viewerScope) => {
+        set({ viewerScope });
+        get().refreshDerived();
+      },
 
       toggleInspector: () => set((s) => ({ showInspector: !s.showInspector })),
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
@@ -441,9 +475,43 @@ export const useLibraryStore = create<LibraryState>()(
 
       setHiddenForIds: async (ids, hidden) => {
         const targets = get().items.filter((i) => ids.includes(i.id));
+        if (!targets.length) return;
+
+        // Hiding removes an item from every visible collection; unhiding puts
+        // it back. Album counts only describe visible items, so keep them in
+        // step locally instead of waiting for a reload.
+        const hiding = hidden ? targets.filter((i) => !i.hidden) : [];
+        const showing = hidden ? [] : targets.filter((i) => i.hidden);
+
         await Promise.all(targets.map((i) => tauri.items.toggleHidden(i.id, hidden)));
+
+        // Folder counts describe the visible gallery, matching the backend.
+        // Refresh them after the flag changes so the Sources summary cannot
+        // keep showing a stale count that includes hidden files.
+        let folders = get().folders;
+        try {
+          folders = await tauri.library.getFolders();
+        } catch {
+          // Keep the previous counts if the folder query fails; the next
+          // library load will reconcile them.
+        }
+
         set((s) => ({
           items: s.items.map((i) => (ids.includes(i.id) ? { ...i, hidden } : i)),
+          folders,
+          albums: s.albums.map((album) => {
+            const visibleDelta =
+              showing.filter((i) => i.albumIds?.includes(album.id)).length -
+              hiding.filter((i) => i.albumIds?.includes(album.id)).length;
+            return {
+              ...album,
+              itemCount: Math.max(0, (album.itemCount || 0) + visibleDelta),
+            };
+          }),
+          // The items just moved between collections, so they cannot stay
+          // selected or inspected in the view they came from.
+          selectedIds: s.selectedIds.filter((id) => !ids.includes(id)),
+          inspectedId: s.inspectedId && ids.includes(s.inspectedId) ? null : s.inspectedId,
         }));
         get().refreshDerived();
       },
@@ -451,12 +519,7 @@ export const useLibraryStore = create<LibraryState>()(
       toggleHidden: async (id) => {
         const item = get().items.find((i) => i.id === id);
         if (!item) return;
-        const next = !item.hidden;
-        await tauri.items.toggleHidden(id, next);
-        set((s) => ({
-          items: s.items.map((i) => (i.id === id ? { ...i, hidden: next } : i)),
-        }));
-        get().refreshDerived();
+        await get().setHiddenForIds([id], !item.hidden);
       },
 
       updateItemTags: async (id, tags) => {
@@ -495,9 +558,13 @@ export const useLibraryStore = create<LibraryState>()(
         if (ids.length) await tauri.albums.addItems(album.id, ids);
 
         // Reflect the new membership immediately. The album response only
-        // carries the count at creation time, so seed it with the ids we just
-        // added and hydrate the matching items' albumIds locally.
-        const created = { ...album, itemIds: ids, itemCount: ids.length };
+        // carries the count at creation time, so seed it with the visible ids
+        // we just added and hydrate the matching items' albumIds locally.
+        const visibleCount = ids.filter((id) => {
+          const item = get().items.find((i) => i.id === id);
+          return item && !item.hidden;
+        }).length;
+        const created = { ...album, itemIds: ids, itemCount: visibleCount };
         set((s) => ({
           albums: [...s.albums, created],
           items: s.items.map((item) =>
@@ -544,12 +611,17 @@ export const useLibraryStore = create<LibraryState>()(
       addToAlbum: async (albumId, itemIds = get().selectedIds) => {
         if (!itemIds.length) return;
 
-        // Count only items that were not already in the album, so repeated
-        // adds do not inflate the sidebar badge.
+        // Count only visible items that were not already in the album, so
+        // repeated adds do not inflate the sidebar badge. Hidden items can be
+        // filed into albums too, but they stay out of the visible count.
         const current = get();
-        const newlyAdded = itemIds.filter((id) => {
+        const newlyLinked = itemIds.filter((id) => {
           const item = current.items.find((i) => i.id === id);
           return item && !(item.albumIds || []).includes(albumId);
+        });
+        const newlyAdded = newlyLinked.filter((id) => {
+          const item = current.items.find((i) => i.id === id);
+          return item && !item.hidden;
         });
 
         await tauri.albums.addItems(albumId, itemIds);
@@ -568,8 +640,8 @@ export const useLibraryStore = create<LibraryState>()(
         get().refreshDerived();
         const albumName = current.albums.find((album) => album.id === albumId)?.name;
         get().showNotice(
-          newlyAdded.length
-            ? `Added ${newlyAdded.length} ${newlyAdded.length === 1 ? "item" : "items"}${albumName ? ` to "${albumName}"` : ""}`
+          newlyLinked.length
+            ? `Added ${newlyLinked.length} ${newlyLinked.length === 1 ? "item" : "items"}${albumName ? ` to "${albumName}"` : ""}`
             : `Those photos are already${albumName ? ` in "${albumName}"` : " in that album"}.`
         );
       },
@@ -580,7 +652,7 @@ export const useLibraryStore = create<LibraryState>()(
         const current = get();
         const removedIds = itemIds.filter((id) => {
           const item = current.items.find((i) => i.id === id);
-          return item?.albumIds?.includes(albumId);
+          return item && !item.hidden && item.albumIds?.includes(albumId);
         });
 
         await tauri.albums.removeItems(albumId, itemIds);

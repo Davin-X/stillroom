@@ -174,13 +174,6 @@ pub fn run() {
             // Duplicates
             find_duplicates,
             compute_hash,
-            // Vault
-            vault_unlock,
-            vault_lock,
-            vault_add_items,
-            vault_remove_items,
-            vault_list_items,
-            vault_get_status,
             // Finder
             write_finder_tags,
             read_finder_tags,

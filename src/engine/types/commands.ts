@@ -109,18 +109,6 @@ export interface BatchExportResult {
   outputs: string[];
 }
 
-export interface VaultSession {
-  unlocked: boolean;
-  expiresAt?: number;
-  method: "password" | "touchid";
-}
-
-export interface VaultItem {
-  mediaId: string;
-  encryptedKey: string;        // Base64 encrypted DEK
-  addedAt: number;
-}
-
 export interface LibraryChangedEvent {
   type: "added" | "updated" | "removed" | "reindexed";
   itemIds: string[];
@@ -192,14 +180,6 @@ export type TauriCommandSignature = {
   // Duplicates
   find_duplicates: () => DuplicateGroup[];
   compute_hash: (path: string) => string;
-
-  // Vault
-  vault_unlock: (biometric: boolean) => VaultSession;
-  vault_lock: () => void;
-  vault_add_items: (itemIds: string[]) => void;
-  vault_remove_items: (itemIds: string[]) => void;
-  vault_list_items: () => MediaItem[];
-  vault_get_status: () => { enabled: boolean; locked: boolean; autoLockMinutes: number };
 
   // Finder
   write_finder_tags: (path: string, tags: string[]) => void;

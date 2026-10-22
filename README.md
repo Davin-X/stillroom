@@ -8,7 +8,7 @@ A fast, local-first photo & video gallery for macOS — React, TypeScript, Vite,
 
 ## What Stillroom is
 
-Stillroom is your private photo library — on your Mac, under your control. It scans folders you choose, builds a local SQLite catalog, reads/writes EXIF metadata, lets you non-destructively edit and export, finds duplicates by SHA-256, and keeps sensitive items in a password-protected Vault.
+Stillroom is your private photo library — on your Mac, under your control. It scans folders you choose, builds a local SQLite catalog, reads/writes EXIF metadata, lets you non-destructively edit and export, finds duplicates by SHA-256, and can hide sensitive items from the gallery.
 
 Nothing is uploaded. Nothing phones home. Your photos stay on your disk.
 
@@ -21,14 +21,14 @@ Nothing is uploaded. Nothing phones home. Your photos stay on your disk.
 ## Features
 
 - **Library grid** — 3 layouts (Grid, Filmstrip, Overview), virtualized
-- **Smart filters** — All / Photos / Videos / RAW / Favorites / Hidden
+- **Smart filters** — All / Photos / Videos / RAW / Favorites
 - **Search** — by filename, folder path, camera model, tags
 - **Viewer** — arrow-key nav, zoom, full-screen, video playback
 - **Non-destructive edits** — exposure, contrast, warmth, rotation, flip; export JPEG/PNG/HEIC/AVIF
 - **Duplicate detection** — SHA-256 scanner
 - **Batch tools** — rename, export, convert, strip metadata
 - **Slideshow** — timed, looping
-- **Vault** — password-protected items (planned: Touch ID / Secure Enclave)
+- **Hidden** — hide items from the gallery; files stay on disk at their original paths (not encrypted)
 - **Dark / Light / System** appearance
 - **Finder tags** read/write
 
@@ -78,7 +78,7 @@ stillroom/
 | 2 — Core Gallery | Virtualized grid (10k+ items), albums/tags, keyboard nav, theme sync | v0.3 |
 | 3 — Viewer & Edit | Image viewer, video playback, Core Image edits, RAW preview, export | v0.4 |
 | 4 — Advanced | Batch export, duplicate scanner, folder watching, Finder tags, Trash | v0.5 |
-| 5 — Vault & Polish | Touch ID vault, auto-lock, menu bar, Dock menu, notarization | v1.0 |
+| 5 — Polish | Menu bar, Dock menu, notarization | v1.0 |
 
 See [`DESIGN_ANALYSIS.md`](./DESIGN_ANALYSIS.md) and [`DESIGN_IMPROVEMENTS.md`](./DESIGN_IMPROVEMENTS.md).
 

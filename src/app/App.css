@@ -1262,6 +1262,49 @@ body {
   flex-shrink: 0;
 }
 
+/* Hidden gallery: media stays veiled until the viewer is deliberately held or
+   confirmed. This is shoulder-surfing deterrence, not file encryption. */
+.gallery-tile.hidden-obscured .tile-image img,
+.gallery-tile.hidden-obscured .tile-image video,
+.inspector-image.hidden-obscured img,
+.inspector-image.hidden-obscured video {
+  filter: blur(18px) saturate(0.55) brightness(0.82);
+}
+
+.gallery-tile.hidden-obscured .tile-image::after,
+.inspector-image.hidden-obscured::after {
+  content: "Hold to show";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  background: rgba(15, 18, 23, 0.3);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+.gallery-tile.hidden-obscured .tile-caption > * {
+  visibility: hidden;
+}
+
+.gallery-tile.hidden-obscured .tile-caption::after {
+  content: "Hidden item · hold to reveal";
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspector-image.hidden-obscured > span {
+  display: none;
+}
+
 /* Grid-style layouts: the caption is always exactly two lines — the file name
    on the first, date + size on the second. A variable caption height is what
    made rows look ragged, because every tile ended at a different height. */

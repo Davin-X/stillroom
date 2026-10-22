@@ -127,8 +127,6 @@ export const useAppearance = () => useSettingsStore((s) => s.appearance);
 export const useAccentColor = () => useSettingsStore((s) => s.accentColor);
 export const useSidebarWidth = () => useSettingsStore((s) => s.sidebarWidth);
 export const useDefaultLayout = () => useSettingsStore((s) => s.defaultLayout);
-export const useVaultEnabled = () => useSettingsStore((s) => s.vaultEnabled);
-export const useVaultAutoLockMinutes = () => useSettingsStore((s) => s.vaultAutoLockMinutes);
 
 // Apply theme to the native app frame.
 //

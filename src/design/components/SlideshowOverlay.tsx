@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useSlideshowStore, type SlideshowTransition } from "../../engine/stores";
+import { useSlideshowStore, useDraftTransforms, draftTransformStyle, type SlideshowTransition } from "../../engine/stores";
 import { GearIcon, PauseIcon, PlayIcon, StopIcon } from "./icons";
 
 interface SlideshowOverlayProps {
@@ -11,6 +11,7 @@ interface SlideshowOverlayProps {
 // inspection state untouched when it closes.
 export function SlideshowOverlay({ assetUrl }: SlideshowOverlayProps) {
   const isOpen = useSlideshowStore((s) => s.isOpen);
+  const draftTransforms = useDraftTransforms();
   const items = useSlideshowStore((s) => s.items);
   const index = useSlideshowStore((s) => s.index);
   const playing = useSlideshowStore((s) => s.playing);
@@ -96,7 +97,7 @@ export function SlideshowOverlay({ assetUrl }: SlideshowOverlayProps) {
         {item.kind === "video" ? (
           <video src={assetUrl(item.path)} autoPlay playsInline />
         ) : (
-          <img src={assetUrl(item.path)} alt={item.name} />
+          <img src={assetUrl(item.path)} alt={item.name} style={{ transform: draftTransformStyle(draftTransforms.get(item.id)) }} />
         )}
       </div>
 

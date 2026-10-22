@@ -21,8 +21,7 @@
     "rust",
     "react",
     "vite",
-    "exif",
-    "vault"
+    "exif"
   ],
   "type": "module",
   "scripts": {

@@ -29,10 +29,6 @@ export interface AppSettings {
   stackLivePhotos: boolean;
 
   // Privacy & Security
-  vaultEnabled: boolean;
-  vaultUnlockMethod: "password" | "touchid" | "both";
-  vaultAutoLockMinutes: number;
-  vaultLockOnSleep: boolean;
   stripGpsOnExport: boolean;
   stripAllMetadataOnExport: boolean;
   allowNetworkRequests: boolean;
@@ -67,10 +63,6 @@ export const defaultSettings: AppSettings = {
   pairRawJpeg: true,
   stackBursts: true,
   stackLivePhotos: true,
-  vaultEnabled: false,
-  vaultUnlockMethod: "both",
-  vaultAutoLockMinutes: 5,
-  vaultLockOnSleep: true,
   stripGpsOnExport: true,
   stripAllMetadataOnExport: false,
   allowNetworkRequests: false,

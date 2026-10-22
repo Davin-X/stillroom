@@ -60,7 +60,6 @@ impl Database {
                 sha256 TEXT,
                 favorite INTEGER DEFAULT 0,
                 hidden INTEGER DEFAULT 0,
-                in_vault INTEGER DEFAULT 0,
                 import_session_id TEXT,
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
@@ -77,7 +76,6 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_media_kind ON media_items(kind);
             CREATE INDEX IF NOT EXISTS idx_media_favorite ON media_items(favorite);
             CREATE INDEX IF NOT EXISTS idx_media_hidden ON media_items(hidden);
-            CREATE INDEX IF NOT EXISTS idx_media_vault ON media_items(in_vault);
             CREATE INDEX IF NOT EXISTS idx_media_sha256 ON media_items(sha256);
             CREATE INDEX IF NOT EXISTS idx_media_session ON media_items(import_session_id);
             "#,
@@ -165,18 +163,30 @@ impl Database {
         .execute(&self.pool)
         .await?;
 
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS vault_items (
-                media_id TEXT PRIMARY KEY REFERENCES media_items(id) ON DELETE CASCADE,
-                encrypted_key TEXT NOT NULL,
-                added_at INTEGER NOT NULL
-            )
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-        
+        // The old "vault" was a UI label with a separate `in_vault` flag and an
+        // unused `vault_items` table. Fold any existing flag into `hidden`, then
+        // remove the dead schema so there is only one hiding concept.
+        let media_columns = sqlx::query("PRAGMA table_info(media_items)")
+            .fetch_all(&self.pool)
+            .await?;
+        let has_in_vault = media_columns
+            .iter()
+            .any(|row| row.get::<String, _>("name") == "in_vault");
+        if has_in_vault {
+            sqlx::query("UPDATE media_items SET hidden = 1 WHERE in_vault = 1")
+                .execute(&self.pool)
+                .await?;
+            sqlx::query("DROP INDEX IF EXISTS idx_media_vault")
+                .execute(&self.pool)
+                .await?;
+            sqlx::query("ALTER TABLE media_items DROP COLUMN in_vault")
+                .execute(&self.pool)
+                .await?;
+        }
+        sqlx::query("DROP TABLE IF EXISTS vault_items")
+            .execute(&self.pool)
+            .await?;
+
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS settings (
@@ -187,6 +197,11 @@ impl Database {
         )
         .execute(&self.pool)
         .await?;
+
+        // Stale keys from the removed privacy controls are no longer read.
+        sqlx::query("DELETE FROM settings WHERE key GLOB 'vault_*'")
+            .execute(&self.pool)
+            .await?;
 
         // Backfill dimensions for existing photos scanned before the fix.
         // Only touches rows where width is 0 or NULL.

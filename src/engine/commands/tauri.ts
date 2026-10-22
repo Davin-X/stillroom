@@ -14,8 +14,6 @@ import type {
   BatchExportRequest,
   BatchExportResult,
   DuplicateGroup,
-  VaultSession,
-  VaultItem,
   LibraryFolder,
   LibraryChangedEvent,
   ImportProgressEvent,
@@ -120,26 +118,6 @@ export const tauri = {
 
     computeHash: (path: string): Promise<string> =>
       invoke("compute_hash", { path }),
-  },
-
-  vault: {
-    unlock: (biometric: boolean): Promise<VaultSession> =>
-      invoke("vault_unlock", { biometric }),
-
-    lock: (): Promise<void> =>
-      invoke("vault_lock"),
-
-    addItems: (itemIds: string[]): Promise<void> =>
-      invoke("vault_add_items", { itemIds }),
-
-    removeItems: (itemIds: string[]): Promise<void> =>
-      invoke("vault_remove_items", { itemIds }),
-
-    listItems: (): Promise<MediaItem[]> =>
-      invoke("vault_list_items"),
-
-    getStatus: (): Promise<{ enabled: boolean; locked: boolean; autoLockMinutes: number }> =>
-      invoke("vault_get_status"),
   },
 
   finder: {

@@ -28,7 +28,6 @@ pub struct MediaItem {
     pub sha256: Option<String>,
     pub favorite: bool,
     pub hidden: bool,
-    pub in_vault: bool,
     pub import_session_id: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
@@ -88,14 +87,6 @@ pub struct ImportSession {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-#[serde(rename_all = "camelCase")]
-pub struct VaultItem {
-    pub media_id: String,
-    pub encrypted_key: String,
-    pub added_at: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Setting {
     pub key: String,
     pub value: String,
@@ -128,7 +119,6 @@ impl<'r> sqlx::FromRow<'r, sqlx::sqlite::SqliteRow> for MediaItem {
             sha256: row.try_get("sha256")?,
             favorite: row.try_get("favorite")?,
             hidden: row.try_get("hidden")?,
-            in_vault: row.try_get("in_vault")?,
             import_session_id: row.try_get("import_session_id")?,
             created_at: row.try_get("created_at")?,
             updated_at: row.try_get("updated_at")?,
@@ -171,7 +161,6 @@ impl MediaItem {
             sha256: None,
             favorite: false,
             hidden: false,
-            in_vault: false,
             import_session_id: None,
             created_at: now,
             updated_at: now,

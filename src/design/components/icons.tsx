@@ -136,17 +136,6 @@ export function BatchIcon({ size = 18, className = "", strokeWidth = 1.8 }: Icon
   );
 }
 
-export function VaultIcon({ size = 18, className = "", strokeWidth = 1.8 }: IconProps) {
-  return (
-    <Svg size={size} className={className} strokeWidth={strokeWidth}>
-      <rect x="3.6" y="10.4" width="16.8" height="10" rx="2.6" />
-      <path d="M8 10.4V7.6a4 4 0 0 1 8 0v2.8" />
-      <circle cx="12" cy="15.2" r="1.4" />
-      <path d="M12 16.6v1.6" />
-    </Svg>
-  );
-}
-
 export function SlideshowIcon({ size = 18, className = "", strokeWidth = 1.8 }: IconProps) {
   return (
     <Svg size={size} className={className} strokeWidth={strokeWidth}>

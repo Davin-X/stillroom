@@ -2814,6 +2814,34 @@ function EditScreen(props: any) {
     );
   }
   const values = props.values;
+  const crop = props.crop || { enabled:false, x:0,y:0,width:1,height:1 };
+  const stageRef = useRef<any>(null);
+  const [drag, setDrag] = useState<any>(null);
+  useEffect(() => {
+    if (!drag) return;
+    const onMove = (e: any) => {
+      const dx = (e.clientX - drag.startX) / drag.rect.width;
+      const dy = (e.clientY - drag.startY) / drag.rect.height;
+      if (drag.type === "move") {
+        const nx = Math.min(Math.max(drag.crop.x + dx, 0), 1 - drag.crop.width);
+        const ny = Math.min(Math.max(drag.crop.y + dy, 0), 1 - drag.crop.height);
+        props.onSetCrop({ x: nx, y: ny });
+      } else {
+        const nw = Math.min(Math.max(drag.crop.width + dx, 0.05), 1 - drag.crop.x);
+        const nh = Math.min(Math.max(drag.crop.height + dy, 0.05), 1 - drag.crop.y);
+        props.onSetCrop({ width: nw, height: nh });
+      }
+    };
+    const onUp = () => setDrag(null);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, [drag, props]);
+  const startDrag = (type: string, e: any) => {
+    e.preventDefault(); e.stopPropagation();
+    const rect = stageRef.current.getBoundingClientRect();
+    setDrag({ type, startX: e.clientX, startY: e.clientY, crop: { ...crop }, rect });
+  };
   return (
     <div className="edit-page">
       <div className="page-heading">
@@ -2822,7 +2850,14 @@ function EditScreen(props: any) {
       </div>
       <div className="editor-layout">
         <div className="edit-canvas">
-          <img src={props.assetUrl(props.item.path)} alt={props.item.name} style={{ transform: `rotate(${values.rotation}deg) scaleX(${values.flip ? -1 : 1})`, filter: `brightness(${100 + values.exposure}%) contrast(${100 + values.contrast}%) saturate(${100 + values.saturation}%)`, maxWidth: "90%", maxHeight: "420px", clipPath: props.crop?.enabled ? `inset(${(props.crop.y||0)*100}% ${(1-(props.crop.x||0)-(props.crop.width||1))*100}% ${(1-(props.crop.y||0)-(props.crop.height||1))*100}% ${(props.crop.x||0)*100}%)` : undefined }} />
+          <div ref={stageRef} className="crop-stage" style={{ position: "relative", display: "inline-block" }}>
+            <img src={props.assetUrl(props.item.path)} alt={props.item.name} style={{ transform: `rotate(${values.rotation}deg) scaleX(${values.flip ? -1 : 1})`, filter: `brightness(${100 + values.exposure}%) contrast(${100 + values.contrast}%) saturate(${100 + values.saturation}%)`, maxWidth: "90%", maxHeight: "420px", display: "block" }} />
+            {crop.enabled && (
+              <div className="crop-overlay" style={{ position: "absolute", left: `${crop.x*100}%`, top: `${crop.y*100}%`, width: `${crop.width*100}%`, height: `${crop.height*100}%`, border: "2px solid #fff", boxShadow: "0 0 0 9999px rgba(0,0,0,.45)", cursor: "move" }} onMouseDown={(e) => startDrag("move", e)}>
+                <span className="crop-handle br" style={{ position: "absolute", right: -6, bottom: -6, width: 12, height: 12, background: "#fff", border: "1px solid #333", cursor: "nwse-resize", borderRadius: 2 }} onMouseDown={(e) => startDrag("resize", e)} />
+              </div>
+            )}
+          </div>
           <div className="canvas-actions">
             <button type="button" onClick={() => props.onRotate(90)}><RotateIcon size={14} /> Rotate</button>
             <button type="button" onClick={props.onFlip}><FlipIcon size={14} /> Flip</button>

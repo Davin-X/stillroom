@@ -2864,14 +2864,12 @@ function EditScreen(props: any) {
               <h3 style={{ margin: "0 0 8px", color: "var(--text)" }}>Drafts</h3>
               <div className="edit-picker-grid" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
                 {drafts.map((item: any) => (
-                  <div key={item.id} className="edit-picker-tile">
+                  <button key={item.id} type="button" className="edit-picker-tile" onClick={() => props.onOpenEdit?.(item)}>
                     <img src={props.assetUrl(item.path)} alt={item.name} />
                     <span>{item.name}</span>
-                    <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
-                      <button type="button" className="quiet-button" style={{ flex: 1 }} onClick={() => props.onOpenEdit?.(item)}>Open editor</button>
-                      <button type="button" className="quiet-button" onClick={(e) => { e.stopPropagation(); try { localStorage.removeItem(`edit:draft:${item.id}`); } catch {} props.onNotice?.("Draft removed"); }}>Remove</button>
-                    </div>
-                  </div>
+                    <span className="draft-badge">Draft</span>
+                    <span className="draft-remove" onClick={(e) => { e.stopPropagation(); try { localStorage.removeItem(`edit:draft:${item.id}`); } catch {} props.onNotice?.("Draft removed"); }} title="Remove draft">×</span>
+                  </button>
                 ))}
               </div>
             </div>
@@ -2880,15 +2878,12 @@ function EditScreen(props: any) {
         {filtered.length>0 ? (<div className="edit-picker-grid">{filtered.map((item:any)=> {
   const hasDraft = (() => { try { return !!localStorage.getItem(`edit:draft:${item.id}`); } catch { return false; } })();
   return (
-    <div key={item.id} className="edit-picker-tile">
+    <button key={item.id} type="button" className="edit-picker-tile" onClick={()=>props.onOpenEdit?.(item)}>
       <img src={props.assetUrl(item.path)} alt={item.name}/>
       <span>{item.name}</span>
       {hasDraft && <span className="draft-badge">Draft</span>}
-      <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
-        <button type="button" className="quiet-button" style={{ flex: 1 }} onClick={() => props.onOpenEdit?.(item)}>Open editor</button>
-        {hasDraft && <button type="button" className="quiet-button" onClick={(e) => { e.stopPropagation(); try { localStorage.removeItem(`edit:draft:${item.id}`); } catch {} props.onNotice?.("Draft removed"); }}>Remove draft</button>}
-      </div>
-    </div>
+      {hasDraft && <span className="draft-remove" onClick={(e) => { e.stopPropagation(); try { localStorage.removeItem(`edit:draft:${item.id}`); } catch {} props.onNotice?.("Draft removed"); }} title="Remove draft">×</span>}
+    </button>
   );
 })}</div>) : (<div className="viewer-empty-state"><div style={{ marginBottom: 16 }}><BrandMark size={56} /></div><h2>No photos found</h2><p>Import a folder or browse from disk.</p></div>) }
       </div>

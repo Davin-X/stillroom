@@ -2853,7 +2853,10 @@ function EditScreen(props: any) {
         </div>
         <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
           <button className="quiet-button" type="button" onClick={() => props.onBack?.()}>Back to Library</button>
-          <input className="search-input" placeholder="Search photos..." value={pickerQuery} onChange={(e) => setPickerQuery(e.target.value)} style={{ flex: 1 }} />
+          <div className="search-field" style={{ flex: 1 }}>
+            <span className="search-icon"><SearchIcon size={15} /></span>
+            <input value={pickerQuery} onChange={(e) => setPickerQuery(e.target.value)} placeholder="Search photos..." aria-label="Search photos" />
+          </div>
           <button className="quiet-button" type="button" onClick={browse}>Browse from Finder…</button>
         </div>
         {(() => {
@@ -2893,7 +2896,10 @@ function EditScreen(props: any) {
     <div className="edit-page">
       <div className="page-heading">
         <div><p className="eyebrow">NON-DESTRUCTIVE EDITING</p><h1>{props.item.name}</h1><p className="page-subtitle">Adjustments are applied only when you export a new copy.</p></div>
-        <span className="saved-indicator"><i /> Original unchanged</span>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button className="quiet-button" type="button" onClick={() => props.onClose?.()}>Select photo</button>
+          <span className="saved-indicator"><i /> Original unchanged</span>
+        </div>
       </div>
       <div className="editor-layout">
         <div className="edit-canvas">

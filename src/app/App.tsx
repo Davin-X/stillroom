@@ -1256,19 +1256,27 @@ handlersRef.current = { importFolder, importFiles, showNotice };
                 img.crossOrigin = "anonymous";
                 img.src = assetUrl(item.path);
                 await new Promise((res, rej) => { img.onload = () => res(null); img.onerror = rej; });
-                const v = edit.values || {};
-                const rot = ((v.rotation || 0) % 360 + 360) % 360;
-                const swap = rot === 90 || rot === 270;
-                const canvas = document.createElement("canvas");
-                canvas.width = swap ? img.naturalHeight : img.naturalWidth;
-                canvas.height = swap ? img.naturalWidth : img.naturalHeight;
-                const ctx = canvas.getContext("2d");
-                if (!ctx) { showNotice("Export failed"); return; }
-                ctx.translate(canvas.width / 2, canvas.height / 2);
-                ctx.rotate((rot * Math.PI) / 180);
-                ctx.scale(v.flip ? -1 : 1, 1);
-                ctx.filter = "brightness(" + (100 + (v.exposure || 0)) + "%) contrast(" + (100 + (v.contrast || 0)) + "%) saturate(" + (100 + (v.saturation || 0)) + "%)";
-                ctx.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight / 2);
+              const v = edit.values || {};
+              const crop = edit.crop || { enabled: false, x:0,y:0,width:1,height:1 };
+              const useCrop = !!crop.enabled;
+              const srcX = useCrop ? crop.x * img.naturalWidth : 0;
+              const srcY = useCrop ? crop.y * img.naturalHeight : 0;
+              const srcW = useCrop ? crop.width * img.naturalWidth : img.naturalWidth;
+              const srcH = useCrop ? crop.height * img.naturalHeight : img.naturalHeight;
+              const rot = ((v.rotation || 0) % 360 + 360) % 360;
+              const swap = rot === 90 || rot === 270;
+              const baseW = srcW;
+              const baseH = srcH;
+              const canvas = document.createElement("canvas");
+              canvas.width = swap ? baseH : baseW;
+              canvas.height = swap ? baseW : baseH;
+              const ctx = canvas.getContext("2d");
+              if (!ctx) { showNotice("Export failed"); return; }
+              ctx.translate(canvas.width / 2, canvas.height / 2);
+              ctx.rotate((rot * Math.PI) / 180);
+              ctx.scale(v.flip ? -1 : 1, 1);
+              ctx.filter = "brightness(" + (100 + (v.exposure || 0)) + "%) contrast(" + (100 + (v.contrast || 0)) + "%) saturate(" + (100 + (v.saturation || 0)) + "%)";
+              ctx.drawImage(img, srcX, srcY, srcW, srcH, -baseW / 2, -baseH / 2, baseW, baseH);
                 const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, "image/jpeg", 0.92));
                 if (!blob) { showNotice("Export failed"); return; }
                 const url = URL.createObjectURL(blob);
@@ -1286,6 +1294,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
               }
             }}
             onClearDraft={edit.clearDraft}
+            onNotice={showNotice}
             assetUrl={assetUrl}
             items={library.items.filter((i: any) => i.kind === "photo")}
             onOpenEdit={(item: any) => { edit.open(item); }}
@@ -2813,7 +2822,7 @@ function EditScreen(props: any) {
       </div>
       <div className="editor-layout">
         <div className="edit-canvas">
-          <img src={props.assetUrl(props.item.path)} alt={props.item.name} style={{ transform: `rotate(${values.rotation}deg) scaleX(${values.flip ? -1 : 1})`, filter: `brightness(${100 + values.exposure}%) contrast(${100 + values.contrast}%) saturate(${100 + values.saturation}%)`, maxWidth: "90%", maxHeight: "420px" }} />
+          <img src={props.assetUrl(props.item.path)} alt={props.item.name} style={{ transform: `rotate(${values.rotation}deg) scaleX(${values.flip ? -1 : 1})`, filter: `brightness(${100 + values.exposure}%) contrast(${100 + values.contrast}%) saturate(${100 + values.saturation}%)`, maxWidth: "90%", maxHeight: "420px", clipPath: props.crop?.enabled ? `inset(${(props.crop.y||0)*100}% ${(1-(props.crop.x||0)-(props.crop.width||1))*100}% ${(1-(props.crop.y||0)-(props.crop.height||1))*100}% ${(props.crop.x||0)*100}%)` : undefined }} />
           <div className="canvas-actions">
             <button type="button" onClick={() => props.onRotate(90)}><RotateIcon size={14} /> Rotate</button>
             <button type="button" onClick={props.onFlip}><FlipIcon size={14} /> Flip</button>
@@ -2821,7 +2830,7 @@ function EditScreen(props: any) {
           </div>
         </div>
         <aside className="edit-controls">
-          <div className="edit-tabs"><button className="active">Light & color</button><button type="button" onClick={() => props.onSetCrop({ enabled: !props.crop.enabled })}>Crop</button><button type="button" onClick={() => props.notice("ICC soft proofing requires native macOS color-management integration.")}>Proof</button></div>
+          <div className="edit-tabs"><button className="active">Light & color</button><button type="button" onClick={() => props.onSetCrop({ enabled: !props.crop.enabled })}>Crop</button><button type="button" onClick={() => props.onNotice?.("ICC soft proofing requires native macOS color-management integration.")}>Proof</button></div>
           <div className="auto-adjust">
             <div><span className="feature-icon yellow-bg"><SparkleIcon size={17} /></span><div><b>Basic adjustments</b><small>Non-destructive preview</small></div></div>
             <button type="button" onClick={props.onAuto}>Auto</button>
@@ -2839,6 +2848,14 @@ function EditScreen(props: any) {
               <input type="range" min={-80} max={80} value={values[key]} onChange={(e) => props.onSetValue(key, Number(e.target.value))} />
             </label>
           ))}
+          {props.crop?.enabled && (
+            <div className="crop-controls">
+              <label className="slider-control"><span>X<b>{Math.round((props.crop.x||0)*100)}%</b></span><input type="range" min={0} max={80} value={(props.crop.x||0)*100} onChange={(e)=>props.onSetCrop({ x: Number(e.target.value)/100 })} /></label>
+              <label className="slider-control"><span>Y<b>{Math.round((props.crop.y||0)*100)}%</b></span><input type="range" min={0} max={80} value={(props.crop.y||0)*100} onChange={(e)=>props.onSetCrop({ y: Number(e.target.value)/100 })} /></label>
+              <label className="slider-control"><span>Width<b>{Math.round((props.crop.width||1)*100)}%</b></span><input type="range" min={20} max={100} value={(props.crop.width||1)*100} onChange={(e)=>props.onSetCrop({ width: Number(e.target.value)/100 })} /></label>
+              <label className="slider-control"><span>Height<b>{Math.round((props.crop.height||1)*100)}%</b></span><input type="range" min={20} max={100} value={(props.crop.height||1)*100} onChange={(e)=>props.onSetCrop({ height: Number(e.target.value)/100 })} /></label>
+            </div>
+          )}
           <div className="edit-footer">
             <button className="quiet-button" type="button" onClick={props.onReset}>Reset</button>
             <button className="quiet-button" type="button" onClick={props.onClearDraft}>Discard draft</button>

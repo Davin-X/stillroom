@@ -1251,9 +1251,13 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             onClose={edit.close}
             onSaveDraft={edit.saveDraft}
             onBack={() => setScreen("Library")}
-            onExport={async () => {
+            onExport={async (inPlace = false) => {
               const item = edit.item;
               if (!item) return;
+              if (inPlace) {
+                const ok = window.confirm("This will overwrite the original file with the edited version. This cannot be undone. Continue?");
+                if (!ok) return;
+              }
               try {
                 const img = new Image();
                 img.crossOrigin = "anonymous";
@@ -1282,15 +1286,20 @@ handlersRef.current = { importFolder, importFiles, showNotice };
               ctx.drawImage(img, srcX, srcY, srcW, srcH, -baseW / 2, -baseH / 2, baseW, baseH);
                 const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, "image/jpeg", 0.92));
                 if (!blob) { showNotice("Export failed"); return; }
-                const path = await save({
-                  defaultPath: String(item.name).replace(/\.[^.]+$/, "") + "_edited.jpg",
-                  filters: [{ name: "JPEG image", extensions: ["jpg", "jpeg"] }],
-                });
-                if (!path) { showNotice("Export cancelled"); return; }
+                let path: any;
+                if (inPlace) {
+                  path = item.path;
+                } else {
+                  path = await save({
+                    defaultPath: String(item.name).replace(/\.[^.]+$/, "") + "_edited.jpg",
+                    filters: [{ name: "JPEG image", extensions: ["jpg", "jpeg"] }],
+                  });
+                  if (!path) { showNotice("Export cancelled"); return; }
+                }
                 const buf = await blob.arrayBuffer();
                 await invoke("save_file", { path, bytes: Array.from(new Uint8Array(buf)) });
                 try { localStorage.removeItem(`edit:draft:${item.id}`); } catch {}
-                showNotice("Exported edited copy");
+                showNotice(inPlace ? "Replaced original" : "Exported edited copy");
               } catch (e) {
                 showNotice("Export failed");
               }
@@ -2940,7 +2949,8 @@ function EditScreen(props: any) {
             <button className="quiet-button" type="button" onClick={props.onReset}>Reset</button>
             <button className="quiet-button" type="button" onClick={props.onClearDraft}>Discard draft</button>
             <button className="quiet-button" type="button" onClick={props.onSaveDraft}>Save draft</button>
-            <button className="primary-button" type="button" onClick={props.onExport}>Save copy</button>
+            <button className="quiet-button" type="button" style={{ color: "#d33" }} onClick={() => props.onExport(true)}>Replace original</button>
+            <button className="primary-button" type="button" onClick={() => props.onExport(false)}>Save copy</button>
           </div>
         </aside>
       </div>

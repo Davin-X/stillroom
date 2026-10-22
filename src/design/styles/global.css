@@ -1364,3 +1364,6 @@ body {
 .edit-controls { overflow-y: auto; }
 .editor-layout { height: auto; }
 .edit-page { overflow-y: auto; }
+.semantic-hero { position: sticky; top: 60px; z-index: 3; padding: 18px 20px; }
+.semantic-search { width: 100%; max-width: 720px; }
+.feature-page { padding-top: 12px; }

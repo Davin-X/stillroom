@@ -153,6 +153,9 @@ export const tauri = {
 
     save: (settings: Partial<AppSettings>): Promise<AppSettings> =>
       invoke("save_settings", { settings }),
+
+    deleteDatabase: (): Promise<void> =>
+      invoke("delete_library_database"),
   },
 
   app: {

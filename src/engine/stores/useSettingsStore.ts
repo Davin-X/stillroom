@@ -34,24 +34,37 @@ export const useSettingsStore = create<SettingsState>()(
         }
       },
 
-      update: async (key, value) => {
+      update: async (key: keyof AppSettings, value: AppSettings[keyof AppSettings]) => {
         const current = get();
-        const next = { ...current, [key]: value };
-        set({ [key]: value });
+        if (key === "sidebarWidth") {
+          // Hard clamp so the layout stays within the bounds the CSS was authored
+          // for (180px - 360px).
+          value = Math.min(360, Math.max(180, Number(value) || 220)) as AppSettings["sidebarWidth"];
+        }
+        const patch: Partial<AppSettings> = { [key]: value } as Partial<AppSettings>;
+        set((state) => ({ ...state, ...patch }));
         try {
-          await tauri.settings.save({ [key]: value });
+          await tauri.settings.save(patch);
         } catch (e) {
           // Revert on failure
-          set({ [key]: current[key] });
+          set((state) => ({ ...state, [key]: current[key] }));
           console.error(`Failed to save setting ${key}:`, e);
         }
       },
 
       updateMany: async (partial) => {
         const current = get();
-        set(partial);
+        const next = { ...current, ...partial };
+        if ("sidebarWidth" in partial) {
+          // Hard clamp so the layout stays within the bounds the CSS was
+          // authored for (180px - 360px).
+          next.sidebarWidth = Math.min(360, Math.max(180, Number(partial.sidebarWidth) || 220));
+        }
+        set(next);
         try {
-          await tauri.settings.save(partial);
+          // Persist the clamped value so stored state and store state never
+          // drift.
+          await tauri.settings.save(next);
         } catch (e) {
           set(current);
           console.error("Failed to save settings:", e);
@@ -91,27 +104,69 @@ export const useDefaultLayout = () => useSettingsStore((s) => s.defaultLayout);
 export const useVaultEnabled = () => useSettingsStore((s) => s.vaultEnabled);
 export const useVaultAutoLockMinutes = () => useSettingsStore((s) => s.vaultAutoLockMinutes);
 
-// Apply theme to document
+// Apply theme to the native app frame.
 export function applyTheme(settings: Pick<AppSettings, "appearance" | "accentColor">) {
-  const root = document.documentElement;
-  const isDark = settings.appearance === "dark" || 
+  const frame = document.querySelector<HTMLElement>(".app-frame");
+  if (!frame) return;
+  const isDark =
+    settings.appearance === "dark" ||
     (settings.appearance === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
-  
-  root.classList.toggle("dark", isDark);
-  
-  // Accent color CSS variable
-  const accents: Record<string, string> = {
-    blue: "#3474d4",
-    purple: "#8b5cf6",
-    green: "#27845f",
-    orange: "#ea7a1a",
-    pink: "#db2777",
-    red: "#dc2626",
-  };
-  root.style.setProperty("--accent", accents[settings.accentColor] || accents.blue);
+
+  frame.classList.toggle("dark", isDark);
+  frame.style.setProperty("--accent", resolveAccent(settings.accentColor, isDark));
+  frame.style.setProperty(
+    "--accent-soft",
+    mixColors(resolveAccent(settings.accentColor, isDark), isDark ? "#171c23" : "#ffffff", 0.12)
+  );
 }
 
-// Listen for system theme changes
+// Resolve a single accent into its light / dark surface palette value.
+function resolveAccent(accent: string, isDark: boolean): string {
+  const palettes: Record<string, Record<string, string>> = {
+    light: {
+      blue: "#3474d4",
+      purple: "#8b5cf6",
+      green: "#27845f",
+      orange: "#ea7a1a",
+      pink: "#db2777",
+      red: "#dc2626",
+    },
+    dark: {
+      blue: "#8ab4ff",
+      purple: "#b79bff",
+      green: "#6bc69a",
+      orange: "#f0a45c",
+      pink: "#f489b8",
+      red: "#f28585",
+    },
+  };
+  const palette = palettes[isDark ? "dark" : "light"];
+  return palette?.[accent] ?? palette?.blue ?? palettes.light.blue;
+}
+
+// Deterministic blend of a foreground color toward a target color.
+// Used to derive the accent soft tint without relying on CSS color-mix, which
+// is not available on older WebViewKit/Safari builds.
+function mixColors(hex: string, mixTo: string, ratio: number): string {
+  const toRgb = (h: string): [number, number, number] => {
+    const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(h);
+    if (!m) return [0, 0, 0];
+    return [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] as [number, number, number];
+  };
+
+  const [r1, g1, b1] = toRgb(hex);
+  const [r2, g2, b2] = toRgb(mixTo);
+  return `rgb(${Math.round(r1 + (r2 - r1) * ratio)}, ${Math.round(g1 + (g2 - g1) * ratio)}, ${Math.round(b1 + (b2 - b1) * ratio)})`;
+}
+
+// Whether the OS is currently in dark mode. Exposed as a selector so callers
+// only have to subscribe to the resolved value.
+export function useSystemDark(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+// Listen for system theme changes so a "system" choice follows the OS.
 if (typeof window !== "undefined") {
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
     const settings = useSettingsStore.getState();

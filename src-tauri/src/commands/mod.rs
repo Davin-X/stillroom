@@ -224,7 +224,8 @@ pub struct PartialSettings {
     pub show_native_limit_warnings: Option<bool>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     pub appearance: String,
     pub accent_color: String,
@@ -1264,6 +1265,9 @@ pub async fn get_settings(state: State<'_, AppState>) -> Result<AppSettings, Str
             "slideshow_loop" => settings.slideshow_loop = value.parse().unwrap_or(true),
             "video_auto_play" => settings.video_auto_play = value.parse().unwrap_or(true),
             "video_loop" => settings.video_loop = value.parse().unwrap_or(false),
+            "watch_folders" => {
+                settings.watch_folders = serde_json::from_str(&value).unwrap_or_default();
+            }
             "auto_import" => settings.auto_import = value.parse().unwrap_or(false),
             "pair_raw_jpeg" => settings.pair_raw_jpeg = value.parse().unwrap_or(true),
             "stack_bursts" => settings.stack_bursts = value.parse().unwrap_or(true),
@@ -1309,6 +1313,7 @@ pub async fn save_settings(settings: PartialSettings, state: State<'_, AppState>
     if let Some(v) = patch.slideshow_loop { settings.slideshow_loop = v; }
     if let Some(v) = patch.video_auto_play { settings.video_auto_play = v; }
     if let Some(v) = patch.video_loop { settings.video_loop = v; }
+    if let Some(v) = patch.watch_folders { settings.watch_folders = v; }
     if let Some(v) = patch.auto_import { settings.auto_import = v; }
     if let Some(v) = patch.pair_raw_jpeg { settings.pair_raw_jpeg = v; }
     if let Some(v) = patch.stack_bursts { settings.stack_bursts = v; }
@@ -1343,6 +1348,7 @@ pub async fn save_settings(settings: PartialSettings, state: State<'_, AppState>
         ("slideshow_loop", settings.slideshow_loop.to_string()),
         ("video_auto_play", settings.video_auto_play.to_string()),
         ("video_loop", settings.video_loop.to_string()),
+        ("watch_folders", serde_json::to_string(&settings.watch_folders).unwrap_or_else(|_| "[]".to_string())),
         ("auto_import", settings.auto_import.to_string()),
         ("pair_raw_jpeg", settings.pair_raw_jpeg.to_string()),
         ("stack_bursts", settings.stack_bursts.to_string()),
@@ -1376,6 +1382,47 @@ pub async fn save_settings(settings: PartialSettings, state: State<'_, AppState>
 #[tauri::command]
 pub async fn get_version() -> Result<String, String> {
     Ok(env!("CARGO_PKG_VERSION").to_string())
+}
+
+/// Purge the entire library catalog (media items, tags, albums, vault items,
+/// library folders, import sessions) while leaving original media files on disk.
+/// This is irreversible through the UI.
+#[tauri::command]
+pub async fn delete_library_database(state: State<'_, AppState>) -> Result<(), String> {
+    let db = get_db(&state)?;
+    sqlx::query("DELETE FROM media_items")
+        .execute(&db)
+        .await
+        .map_err(|e| e.to_string())?;
+    sqlx::query("DELETE FROM media_tags")
+        .execute(&db)
+        .await
+        .map_err(|e| e.to_string())?;
+    sqlx::query("DELETE FROM album_items")
+        .execute(&db)
+        .await
+        .map_err(|e| e.to_string())?;
+    sqlx::query("DELETE FROM vault_items")
+        .execute(&db)
+        .await
+        .map_err(|e| e.to_string())?;
+    sqlx::query("DELETE FROM albums")
+        .execute(&db)
+        .await
+        .map_err(|e| e.to_string())?;
+    sqlx::query("DELETE FROM tags")
+        .execute(&db)
+        .await
+        .map_err(|e| e.to_string())?;
+    sqlx::query("DELETE FROM library_folders")
+        .execute(&db)
+        .await
+        .map_err(|e| e.to_string())?;
+    sqlx::query("DELETE FROM import_sessions")
+        .execute(&db)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]

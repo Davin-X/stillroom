@@ -15,67 +15,6 @@ body {
 }
 button, input, select { color: inherit; font: inherit; }
 button { cursor: pointer; }
-
-.app-frame {
-  --surface: #fff;
-  --surface-2: #f8f9fa;
-  --surface-3: #f1f3f5;
-  --sidebar: #f7f8fa;
-  --ink: #252b31;
-  --text: #505a64;
-  --muted: #929ba4;
-  --faint: #abb2b9;
-  --line: #e9ecef;
-  --line-strong: #dfe4e8;
-  --blue: #4d8ef7;
-  --blue-soft: #e9f1ff;
-  --green: #39a77a;
-  --green-soft: #e6f4ea;
-  --orange: #e67e22;
-  --orange-soft: #fef3e2;
-  /* Field chrome: the outer border, the inner hairline that makes a control
-     look carved into the surface, and the top-edge shadow that gives the
-     recessed area a little depth. */
-  --field-line: #d8dee6;
-  --field-line-hover: #c2ccd7;
-  --field-inner: rgba(32, 42, 54, 0.06);
-  --field-inner-strong: rgba(32, 42, 54, 0.12);
-  --field-focus-inner: rgba(52, 116, 212, 0.22);
-  width: min(1600px, 100%);
-  min-height: min(1000px, calc(100vh - 48px));
-  margin: 0 auto;
-  overflow: hidden;
-  border: 1px solid rgba(255,255,255,.9);
-  border-radius: 16px;
-  background: var(--surface);
-  color: var(--ink);
-  box-shadow: 0 28px 80px rgba(45,59,72,.17), 0 3px 12px rgba(45,59,72,.05);
-  transition: color .2s ease, background .2s ease;
-}
-
-.app-frame.dark {
-  --surface: #171a1f;
-  --surface-2: #1c2026;
-  --surface-3: #262b32;
-  --sidebar: #1b1e24;
-  --ink: #f0f2f5;
-  --text: #c2c8d0;
-  --muted: #919aa5;
-  --faint: #717b86;
-  --line: #2c3139;
-  --line-strong: #3a414b;
-  --blue: #81adff;
-  --blue-soft: #263750;
-  --green: #59c496;
-  --field-line: #3a414b;
-  --field-line-hover: #4d5561;
-  --field-inner: rgba(0, 0, 0, 0.28);
-  --field-inner-strong: rgba(0, 0, 0, 0.42);
-  --field-focus-inner: rgba(138, 180, 255, 0.24);
-  border-color: #333942;
-  box-shadow: 0 28px 80px rgba(0,0,0,.4), 0 3px 12px rgba(0,0,0,.18);
-}
-
 .topbar {
   position: relative;
   z-index: 5;
@@ -220,23 +159,6 @@ kbd { padding: 2px 4px; border: 1px solid var(--line-strong); border-radius: 4px
 .app-frame :is(h1, h2, h3, h4, button, input, select, textarea, kbd) {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-kerning: normal;
-}
-
-.app-frame {
-  font-size: 13px;
-  --text: #414b55;
-  --muted: #66717c;
-  --faint: #7b858f;
-  --line: #e1e5e9;
-  --line-strong: #cbd2d9;
-}
-
-.app-frame.dark {
-  --text: #d0d6dd;
-  --muted: #b1bac4;
-  --faint: #9ba6b1;
-  --line: #363d46;
-  --line-strong: #4b5560;
 }
 
 .app-frame :is(.page-heading h1, .content-heading h1) {
@@ -637,11 +559,6 @@ kbd { padding: 2px 4px; border: 1px solid var(--line-strong); border-radius: 4px
 }
 
 /* Cohesive native gallery visual system */
-:root {
-  color: #202a36;
-  background: #e8edf2;
-}
-
 body {
   background: #e8edf2;
 }
@@ -657,8 +574,12 @@ body {
   --faint: #778394;
   --line: #e1e6ec;
   --line-strong: #cbd3dd;
-  --blue: #3474d4;
-  --blue-soft: #eaf1fc;
+  /* Accent tokens: a single accent setting drives every --blue reference in
+     the UI, so the accent picker actually changes buttons, links, active
+     nav, sliders and focus rings. */
+  --accent: #3474d4;
+  --blue: var(--accent);
+  --blue-soft: color-mix(in srgb, var(--accent) 12%, var(--surface));
   --green: #27845f;
   /* Field chrome: the outer border, the inner hairline that makes a control
      look carved into the surface, and the top-edge shadow that gives the
@@ -668,6 +589,8 @@ body {
   --field-inner: rgba(32, 42, 54, 0.07);
   --field-inner-strong: rgba(32, 42, 54, 0.13);
   --field-focus-inner: rgba(52, 116, 212, 0.24);
+  /* Sidebar width: the layout grid is driven from this property. */
+  --sidebar-width: 220px;
   font-size: 14px;
   line-height: 1.45;
   border-color: #dce2e9;
@@ -686,8 +609,9 @@ body {
   --faint: #95a1af;
   --line: #303844;
   --line-strong: #444f5d;
-  --blue: #8ab4ff;
-  --blue-soft: #263a56;
+  --accent: #8ab4ff;
+  --blue: var(--accent);
+  --blue-soft: color-mix(in srgb, var(--accent) 12%, var(--surface));
   --green: #6bc69a;
   --field-line: #39414d;
   --field-line-hover: #4c5663;
@@ -710,6 +634,7 @@ body {
 .topbar-brand {
   font-size: 14px;
   font-weight: 650;
+  color: var(--text);
 }
 
 .topbar-center,

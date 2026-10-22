@@ -1380,7 +1380,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             notice={showNotice}
           />}
 
-          {screen === "Explore" && <ExploreScreen items={library.items.filter((i: any) => !i.hidden)} assetUrl={assetUrl} />}
+          {screen === "Explore" && <ExploreScreen items={library.items.filter((i: any) => !i.hidden)} assetUrl={assetUrl} onNavigate={setScreen} />}
 
           {screen === "Duplicates" && <DuplicatesScreen
             groups={library.duplicates}
@@ -3344,12 +3344,12 @@ function ExploreScreen(props: any) {
     setQueryState(val);
     library.setQuery(val);
     if (val) saveRecent(val);
-    library.setScreen("Library");
+    props.onNavigate("Library");
   };
 
   const applyFilter = (filter: Filter) => {
     library.setFilter(filter);
-    library.setScreen("Library");
+    props.onNavigate("Library");
   };
 
   const extensions = React.useMemo(() => [...new Set(items.map((i: any) => (i.extension || "").toUpperCase()).filter(Boolean))].slice(0, 8), [items]);
@@ -3405,10 +3405,10 @@ function ExploreScreen(props: any) {
       </div>
 
       <div className="feature-card">
-        <div className="feature-card-heading"><div><h3>Recently added</h3><p>Latest items in your library.</p></div><button type="button" className="quiet-button" onClick={() => library.setScreen("Library")}>View all</button></div>
+        <div className="feature-card-heading"><div><h3>Recently added</h3><p>Latest items in your library.</p></div><button type="button" className="quiet-button" onClick={() => props.onNavigate("Library")}>View all</button></div>
         <div className="duplicate-grid">
           {previewItems.map((item: any) => (
-            <div className="duplicate-card" key={item.id} onClick={() => { library.inspectItem(item.id); library.setScreen("Library"); }}>
+            <div className="duplicate-card" key={item.id} onClick={() => { library.inspectItem(item.id); props.onNavigate("Library"); }}>
               {item.kind === "photo" ? <img src={props.assetUrl(item.path)} alt={item.name} /> : <div className="duplicate-nonimage"><KindBadge kind={item.kind} /></div>}
               <div><span>{item.name}</span><small>{formatBytesSimple(item.size)}</small></div>
             </div>

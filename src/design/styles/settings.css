@@ -527,6 +527,8 @@
   width: 0;
   height: 0;
   margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
 }
 
 .toggle-track {

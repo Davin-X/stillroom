@@ -177,6 +177,7 @@ pub fn run() {
             // Vault
             vault_unlock,
             vault_set_password,
+            vault_clear_password,
             vault_lock,
             vault_add_items,
             vault_remove_items,

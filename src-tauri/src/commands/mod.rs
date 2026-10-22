@@ -1191,6 +1191,8 @@ pub async fn vault_unlock(password: Option<String>, biometric: bool, state: Stat
                 return Err("Incorrect password".to_string());
             }
         }
+    } else {
+        return Err("No password set. Set a password first.".to_string());
     }
     Ok(VaultSession { unlocked: true, expires_at: Some(now_ms() + 5 * 60 * 1000), method: if biometric { "touchid" } else { "password" }.to_string() })
 }
@@ -1211,6 +1213,16 @@ pub async fn vault_set_password(password: String, state: State<'_, AppState>) ->
 
 #[tauri::command]
 pub async fn vault_lock(state: State<'_, AppState>) -> Result<(), String> { let _ = state; Ok(()) }
+
+#[tauri::command]
+pub async fn vault_clear_password(state: State<'_, AppState>) -> Result<(), String> {
+    let db = get_db(&state)?;
+    sqlx::query("DELETE FROM settings WHERE key = 'vault_password_hash'")
+        .execute(&db)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
 
 #[tauri::command]
 pub async fn vault_add_items(item_ids: Vec<String>, state: State<'_, AppState>) -> Result<(), String> {

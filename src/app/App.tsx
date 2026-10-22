@@ -1250,6 +1250,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             canRedo={edit.canRedo}
             onClose={edit.close}
             onSaveDraft={edit.saveDraft}
+            onBack={() => setScreen("Library")}
             onExport={async () => {
               const item = edit.item;
               if (!item) return;
@@ -2851,6 +2852,7 @@ function EditScreen(props: any) {
           <div><p className="eyebrow">NON-DESTRUCTIVE EDITING</p><h1>Select a photo to edit</h1><p className="page-subtitle">Choose a browser-supported photo from your library or browse from disk, then open the editor.</p></div>
         </div>
         <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          <button className="quiet-button" type="button" onClick={() => props.onBack?.()}>Back to Library</button>
           <input className="search-input" placeholder="Search photos..." value={pickerQuery} onChange={(e) => setPickerQuery(e.target.value)} style={{ flex: 1 }} />
           <button className="quiet-button" type="button" onClick={browse}>Browse from Finder…</button>
         </div>

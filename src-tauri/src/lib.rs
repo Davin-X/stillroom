@@ -191,6 +191,7 @@ pub fn run() {
             get_version,
             check_updates,
             open_external,
+            save_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

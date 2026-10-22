@@ -1456,3 +1456,7 @@ pub async fn open_external(url: String) -> Result<(), String> {
         .map_err(|e| format!("Could not open {}: {}", url, e))?;
     Ok(())
 }
+#[tauri::command]
+pub async fn save_file(path: String, bytes: Vec<u8>) -> Result<(), String> {
+    std::fs::write(&path, bytes).map_err(|e| e.to_string())
+}

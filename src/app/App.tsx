@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo, memo } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
 import { currentMonitor, getCurrentWindow, LogicalSize, PhysicalPosition } from "@tauri-apps/api/window";
 import { tauri, events } from "../engine/commands/tauri";
 import {
@@ -1279,14 +1280,13 @@ handlersRef.current = { importFolder, importFiles, showNotice };
               ctx.drawImage(img, srcX, srcY, srcW, srcH, -baseW / 2, -baseH / 2, baseW, baseH);
                 const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, "image/jpeg", 0.92));
                 if (!blob) { showNotice("Export failed"); return; }
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = String(item.name).replace(/\.[^.]+$/, "") + "_edited.jpg";
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
+                const path = await save({
+                  defaultPath: String(item.name).replace(/\.[^.]+$/, "") + "_edited.jpg",
+                  filters: [{ name: "JPEG image", extensions: ["jpg", "jpeg"] }],
+                });
+                if (!path) { showNotice("Export cancelled"); return; }
+                const buf = await blob.arrayBuffer();
+                await invoke("save_file", { path, bytes: Array.from(new Uint8Array(buf)) });
                 try { localStorage.removeItem(`edit:draft:${item.id}`); } catch {}
                 showNotice("Exported edited copy");
               } catch (e) {

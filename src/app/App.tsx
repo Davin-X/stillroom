@@ -3325,60 +3325,103 @@ function AlbumsScreen(props: any) {
 function ExploreScreen(props: any) {
   const library = useLibraryStore();
   const [query, setQueryState] = React.useState("");
+  const [recent, setRecent] = React.useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem("explore:recent") || "[]"); } catch { return []; }
+  });
 
-  const suggestions = React.useMemo(() => {
-    const extensions = [...new Set((props.items || []).map((i: any) => i.extension.toUpperCase()))].slice(0, 6);
-    const folders = [...new Set((props.items || []).map((i: any) => i.path.split("/").slice(0, -1).join("/")).filter(Boolean))].slice(0, 4);
-    return [...extensions, ...folders];
-  }, [props.items]);
+  const items = props.items || [];
 
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
+  const saveRecent = (q: string) => {
+    const trimmed = q.trim();
+    if (!trimmed) return;
+    const next = [trimmed, ...recent.filter((r) => r !== trimmed)].slice(0, 8);
+    setRecent(next);
+    try { localStorage.setItem("explore:recent", JSON.stringify(next)); } catch {}
+  };
+
+  const runSearch = (q: string) => {
+    const val = q.trim();
     setQueryState(val);
     library.setQuery(val);
-  };
-
-  const handleSearchSubmit = () => {
-    if (query.trim()) {
-      library.setQuery(query);
-      library.setScreen("Library");
-    }
-  };
-
-  const handleSuggestionClick = (s: string) => {
-    setQueryState(s);
-    library.setQuery(s);
+    if (val) saveRecent(val);
     library.setScreen("Library");
   };
 
-  const handleFilterClick = (filter: Filter) => {
+  const applyFilter = (filter: Filter) => {
     library.setFilter(filter);
     library.setScreen("Library");
+  };
+
+  const extensions = React.useMemo(() => [...new Set(items.map((i: any) => (i.extension || "").toUpperCase()).filter(Boolean))].slice(0, 8), [items]);
+  const folders = React.useMemo(() => [...new Set(items.map((i: any) => (i.path || "").split("/").slice(0, -1).join("/")).filter(Boolean))].slice(0, 6), [items]);
+  const tags = React.useMemo(() => [...new Set(items.flatMap((i: any) => i.tags || []))].slice(0, 8), [items]);
+  const suggestions = React.useMemo(() => [...extensions, ...folders].slice(0, 10), [extensions, folders]);
+  const previewItems = React.useMemo(() => items.slice(0, 12), [items]);
+
+  const clearRecent = () => {
+    setRecent([]);
+    try { localStorage.removeItem("explore:recent"); } catch {}
   };
 
   return (
     <div className="feature-page">
       <div className="page-heading">
-        <div><p className="eyebrow">LOCAL SEARCH</p><h1>Find the moment.</h1><p className="page-subtitle">Search local filenames, folders, formats, and app tags.</p></div>
+        <div><p className="eyebrow">SEARCH & DISCOVERY</p><h1>Find the moment.</h1><p className="page-subtitle">Search filenames, folders, tags, and formats. Everything stays on your device.</p></div>
       </div>
+
       <div className="semantic-hero">
         <div className="semantic-orb"><SearchIcon size={22} /></div>
-        <div><span className="eyebrow">PRIVATE LIBRARY SEARCH</span><h2>What are you looking for?</h2><p>Search works on names and folder paths. No photos leave your device.</p></div>
-        <div className="semantic-search"><SearchIcon size={15} /><input value={query} onChange={handleSearchChange} onKeyDown={(e) => { if (e.key === "Enter") handleSearchSubmit(); else if (e.key === "Escape" && query) { library.setQuery(""); setQueryState(""); library.setScreen("Library"); } }} placeholder="Search a filename, folder, or format" /><kbd>↵</kbd></div>
+        <div><span className="eyebrow">PRIVATE LIBRARY SEARCH</span><h2>What are you looking for?</h2><p>Search works on names, paths, tags, and formats. No photos leave your device.</p></div>
+        <div className="semantic-search"><SearchIcon size={15} /><input value={query} onChange={(e) => setQueryState(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") runSearch(query); else if (e.key === "Escape" && query) { setQueryState(""); library.setQuery(""); } }} placeholder="Search a filename, folder, tag, or format" /><kbd>↵</kbd></div>
         <div className="search-suggestions">
           <span>In your library:</span>
-          {suggestions.length ? (suggestions as string[]).map((s: string) => <button type="button" key={s} onClick={() => handleSuggestionClick(s)}>{s}</button>) : <small>Open a folder to index local names.</small>}
+          {suggestions.length ? suggestions.map((s: any) => <button type="button" key={s} onClick={() => runSearch(s)}>{s}</button>) : <small>Open a folder to index local names.</small>}
         </div>
       </div>
+
+      {recent.length > 0 && (
+        <div className="feature-card">
+          <div className="feature-card-heading"><div><h3>Recent searches</h3><p>Jump back to a previous query.</p></div><button type="button" className="quiet-button" onClick={clearRecent}>Clear</button></div>
+          <div className="search-suggestions">{recent.map((r: any) => <button type="button" key={r} onClick={() => runSearch(r)}>{r}</button>)}</div>
+        </div>
+      )}
+
       <div className="feature-grid two">
         <div className="feature-card">
-          <div className="feature-card-heading"><span className="feature-icon violet-bg"><UsersIcon size={17} /></span><div><h3>On-device people & objects</h3><p>Semantic recognition is not enabled in the browser preview.</p></div><span className="beta-badge">FUTURE NATIVE FEATURE</span></div>
-          <div className="feature-body-note">An on-device vision model can index scenes and faces without sending images to a cloud service.</div>
+          <div className="feature-card-heading"><span className="feature-icon violet-bg"><UsersIcon size={17} /></span><div><h3>Smart filters</h3><p>Quickly narrow the library.</p></div></div>
+          <div className="rule-line"><span>Favorites</span><b>{items.filter((i: any) => i.favorite).length}</b><button type="button" onClick={() => applyFilter("Favorites")}>Show</button></div>
+          <div className="rule-line"><span>Videos</span><b>{items.filter((i: any) => i.kind === "video").length}</b><button type="button" onClick={() => applyFilter("Videos")}>Show</button></div>
+          <div className="rule-line"><span>RAW</span><b>{items.filter((i: any) => i.kind === "raw").length}</b><button type="button" onClick={() => applyFilter("RAW")}>Show</button></div>
+          <div className="rule-line"><span>Hidden</span><b>{items.filter((i: any) => i.hidden).length}</b><button type="button" onClick={() => applyFilter("Hidden")}>Show</button></div>
         </div>
         <div className="feature-card">
-          <div className="feature-card-heading"><span className="feature-icon green-bg"><TagIcon size={17} /></span><div><h3>Smart filters</h3><p>Filter formats and favorites from the library.</p></div></div>
-          <div className="rule-line"><span>Media kind</span><b>Local</b><button type="button" onClick={() => handleFilterClick("Videos")}>Show videos</button></div>
-          <div className="rule-line"><span>File format</span><b>Local</b><button type="button" onClick={() => handleFilterClick("RAW")}>Show RAW</button></div>
+          <div className="feature-card-heading"><span className="feature-icon green-bg"><TagIcon size={17} /></span><div><h3>Tags & formats</h3><p>Explore by metadata.</p></div></div>
+          <div className="search-suggestions">
+            {tags.map((t: any) => <button type="button" key={t} onClick={() => runSearch(t)}>{t}</button>)}
+            {extensions.map((e: any) => <button type="button" key={e} onClick={() => runSearch(e)}>{e}</button>)}
+            {!tags.length && !extensions.length && <small>No tags or formats yet.</small>}
+          </div>
+        </div>
+      </div>
+
+      <div className="feature-card">
+        <div className="feature-card-heading"><div><h3>Recently added</h3><p>Latest items in your library.</p></div><button type="button" className="quiet-button" onClick={() => library.setScreen("Library")}>View all</button></div>
+        <div className="duplicate-grid">
+          {previewItems.map((item: any) => (
+            <div className="duplicate-card" key={item.id} onClick={() => { library.inspectItem(item.id); library.setScreen("Library"); }}>
+              {item.kind === "photo" ? <img src={props.assetUrl(item.path)} alt={item.name} /> : <div className="duplicate-nonimage"><KindBadge kind={item.kind} /></div>}
+              <div><span>{item.name}</span><small>{formatBytesSimple(item.size)}</small></div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="feature-grid two">
+        <div className="feature-card">
+          <div className="feature-card-heading"><span className="feature-icon violet-bg"><HeartIcon size={17} /></span><div><h3>Favorites</h3><p>{items.filter((i: any) => i.favorite).length} starred items.</p></div><button type="button" className="quiet-button" onClick={() => applyFilter("Favorites")}>Open</button></div>
+        </div>
+        <div className="feature-card">
+          <div className="feature-card-heading"><span className="feature-icon green-bg"><SparkleIcon size={17} /></span><div><h3>Coming soon</h3><p>On-device faces, objects, scenes, and OCR search.</p></div><span className="beta-badge">FUTURE</span></div>
         </div>
       </div>
     </div>

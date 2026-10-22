@@ -601,6 +601,8 @@ body {
   --accent-soft: color-mix(in srgb, var(--accent) 12%, var(--surface));
   --blue-soft: var(--accent-soft);
   --green: #27845f;
+  --orange: #f97316;
+  --orange-soft: rgba(249, 115, 22, 0.12);
   /* Field chrome: the outer border, the inner hairline that makes a control
      look carved into the surface, and the top-edge shadow that gives the
      recessed area a little depth. */
@@ -643,6 +645,8 @@ body {
   --accent-soft: color-mix(in srgb, var(--accent) 12%, var(--surface));
   --blue-soft: var(--accent-soft);
   --green: #6bc69a;
+  --orange: #fb923c;
+  --orange-soft: rgba(251, 146, 60, 0.15);
   --field-line: #39414d;
   --field-line-hover: #4c5663;
   --field-inner: rgba(0, 0, 0, 0.3);

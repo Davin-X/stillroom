@@ -1201,7 +1201,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             onOpenAlbums={() => openScreen("Albums")}
             onAddItems={(albumId: string) => addItemsToAlbum(albumId)}
             onOpenAlbumPicker={(itemIds?: string[]) => openAlbumPicker(itemIds)}
-            onAddToVault={vault.unlocked ? (ids: string[]) => vault.addItems(ids) : undefined}
+            onAddToVault={vault.unlocked ? (ids: string[]) => { vault.addItems(ids); setScreen("Vault"); } : undefined}
             onAlbumMenu={(e: React.MouseEvent) => {
               const album = library.albums.find((a: any) => a.id === library.activeAlbum);
               if (album) openAlbumMenu(album, e);

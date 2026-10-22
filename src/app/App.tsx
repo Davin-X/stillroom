@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo, memo } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { save, open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { currentMonitor, getCurrentWindow, LogicalSize, PhysicalPosition } from "@tauri-apps/api/window";
 import { tauri, events } from "../engine/commands/tauri";
 import {
@@ -884,9 +885,6 @@ function App() {
       const selectedItem = library.items.find(i => i.id === library.inspectedId);
       if (selectedItem && selectedItem.kind === "photo") {
         edit.open(selectedItem);
-      } else {
-        showNotice("Select a photo to edit.");
-        return;
       }
     }
     if (next === "Vault") vault.loadStatus();
@@ -1177,6 +1175,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             onUpdateTags={library.updateItemTags}
             onDeleteItems={library.deleteItems}
             onOpenViewer={(id?: string) => { viewer.open(id); setScreen("Viewer"); }}
+            onOpenEdit={(item: any) => { edit.open(item); setScreen("Edit"); }}
             onImportFolder={() => importFolder()}
             onImportFiles={() => importFiles()}
             onPlaySlideshow={playSlideshow}
@@ -1250,8 +1249,66 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             canUndo={edit.canUndo}
             canRedo={edit.canRedo}
             onClose={edit.close}
-            onExport={async () => showNotice("Export - coming soon")}
+            onSaveDraft={edit.saveDraft}
+            onBack={() => setScreen("Library")}
+            onExport={async (inPlace = false) => {
+              const item = edit.item;
+              if (!item) return;
+              if (inPlace) {
+                const ok = window.confirm("This will overwrite the original file with the edited version. This cannot be undone. Continue?");
+                if (!ok) return;
+              }
+              try {
+                const img = new Image();
+                img.crossOrigin = "anonymous";
+                img.src = assetUrl(item.path);
+                await new Promise((res, rej) => { img.onload = () => res(null); img.onerror = rej; });
+              const v = edit.values || {};
+              const crop = edit.crop || { enabled: false, x:0,y:0,width:1,height:1 };
+              const useCrop = !!crop.enabled;
+              const srcX = useCrop ? crop.x * img.naturalWidth : 0;
+              const srcY = useCrop ? crop.y * img.naturalHeight : 0;
+              const srcW = useCrop ? crop.width * img.naturalWidth : img.naturalWidth;
+              const srcH = useCrop ? crop.height * img.naturalHeight : img.naturalHeight;
+              const rot = ((v.rotation || 0) % 360 + 360) % 360;
+              const swap = rot === 90 || rot === 270;
+              const baseW = srcW;
+              const baseH = srcH;
+              const canvas = document.createElement("canvas");
+              canvas.width = swap ? baseH : baseW;
+              canvas.height = swap ? baseW : baseH;
+              const ctx = canvas.getContext("2d");
+              if (!ctx) { showNotice("Export failed"); return; }
+              ctx.translate(canvas.width / 2, canvas.height / 2);
+              ctx.rotate((rot * Math.PI) / 180);
+              ctx.scale(v.flip ? -1 : 1, 1);
+              ctx.filter = "brightness(" + (100 + (v.exposure || 0)) + "%) contrast(" + (100 + (v.contrast || 0)) + "%) saturate(" + (100 + (v.saturation || 0)) + "%)";
+              ctx.drawImage(img, srcX, srcY, srcW, srcH, -baseW / 2, -baseH / 2, baseW, baseH);
+                const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, "image/jpeg", 0.92));
+                if (!blob) { showNotice("Export failed"); return; }
+                let path: any;
+                if (inPlace) {
+                  path = item.path;
+                } else {
+                  path = await save({
+                    defaultPath: String(item.name).replace(/\.[^.]+$/, "") + "_edited.jpg",
+                    filters: [{ name: "JPEG image", extensions: ["jpg", "jpeg"] }],
+                  });
+                  if (!path) { showNotice("Export cancelled"); return; }
+                }
+                const buf = await blob.arrayBuffer();
+                await invoke("save_file", { path, bytes: Array.from(new Uint8Array(buf)) });
+                try { localStorage.removeItem(`edit:draft:${item.id}`); } catch {}
+                showNotice(inPlace ? "Replaced original" : "Exported edited copy");
+              } catch (e) {
+                showNotice("Export failed");
+              }
+            }}
+            onClearDraft={edit.clearDraft}
+            onNotice={showNotice}
             assetUrl={assetUrl}
+            items={library.items.filter((i: any) => i.kind === "photo")}
+            onOpenEdit={(item: any) => { edit.saveDraft(); edit.open(item); }}
           />}
 
           {screen === "Batch" && <BatchScreen
@@ -2026,6 +2083,7 @@ function LibraryScreen(props: any) {
   // membership. The picker itself carries the album list and search.
   const itemContextMenu = (item: any) => [
     { label: "Open", onClick: () => props.onOpenViewer(item.id) },
+    ...(item.kind === "photo" ? [{ label: "Edit", onClick: () => { props.onOpenEdit?.(item); } }] : []),
     { label: "Open in Finder", onClick: () => tauri.items.revealInFinder(item.path) },
     { divider: true },
     { label: "Add to Album…", onClick: () => props.onOpenAlbumPicker?.([item.id]) },
@@ -2756,26 +2814,117 @@ function ViewerScreen(props: any) {
 }
 
 function EditScreen(props: any) {
+  const [pickerQuery, setPickerQuery] = useState("");
+  const [confirmReplace, setConfirmReplace] = useState(false);
+  const stageRef = useRef<any>(null);
+  const [drag, setDrag] = useState<any>(null);
+  const values = props.values || {};
+  const crop = props.crop || { enabled:false, x:0,y:0,width:1,height:1 };
+  useEffect(() => {
+    if (!drag || !props.item) return;
+    const onMove = (e: any) => {
+      const dx = (e.clientX - drag.startX) / drag.rect.width;
+      const dy = (e.clientY - drag.startY) / drag.rect.height;
+      if (drag.type === "move") {
+        const nx = Math.min(Math.max(drag.crop.x + dx, 0), 1 - drag.crop.width);
+        const ny = Math.min(Math.max(drag.crop.y + dy, 0), 1 - drag.crop.height);
+        props.onSetCrop({ x: nx, y: ny });
+      } else {
+        const nw = Math.min(Math.max(drag.crop.width + dx, 0.05), 1 - drag.crop.x);
+        const nh = Math.min(Math.max(drag.crop.height + dy, 0.05), 1 - drag.crop.y);
+        props.onSetCrop({ width: nw, height: nh });
+      }
+    };
+    const onUp = () => setDrag(null);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, [drag, props]);
+  const startDrag = (type: string, e: any) => {
+    e.preventDefault(); e.stopPropagation();
+    const rect = stageRef.current.getBoundingClientRect();
+    setDrag({ type, startX: e.clientX, startY: e.clientY, crop: { ...crop }, rect });
+  };
   if (!props.item) {
+    const filtered = (props.items || []).filter((it: any) => {
+      const hasDraft = (() => { try { return !!localStorage.getItem(`edit:draft:${it.id}`); } catch { return false; } })();
+      if (hasDraft) return false;
+      return !pickerQuery || String(it.name || "").toLowerCase().includes(pickerQuery.toLowerCase());
+    });
+    const browse = async () => {
+      try {
+        const sel = await openFileDialog({ multiple: false, filters: [{ name: "Images", extensions: ["jpg","jpeg","png","webp","heic","heif","tif","tiff"] }] });
+        if (!sel) return;
+        const path = Array.isArray(sel) ? sel[0] : sel;
+        const name = String(path).split(/[\\/]/).pop() || "photo";
+        props.onOpenEdit?.({ id: path, name, path, kind: "photo" });
+      } catch (e) { props.onNotice?.("Could not open file"); }
+    };
     return (
       <div className="edit-page">
         <div className="page-heading">
-          <div><p className="eyebrow">NON-DESTRUCTIVE EDITING</p><h1>Select a photo to edit</h1><p className="page-subtitle">Choose a browser-supported photo from your library, then open the editor.</p></div>
+          <div><p className="eyebrow">NON-DESTRUCTIVE EDITING</p><h1>Select a photo to edit</h1><p className="page-subtitle">Choose a browser-supported photo from your library or browse from disk, then open the editor.</p></div>
         </div>
-        <div className="viewer-empty-state"><div style={{ marginBottom: 16 }}><BrandMark size={56} /></div><h2>No photo selected</h2><p>Open a photo in the viewer, then click Edit, or select one in the library.</p><button className="primary-button" type="button" onClick={() => {}}>Open Library</button></div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
+          <button className="quiet-button" type="button" onClick={() => props.onBack?.()}>Back to Library</button>
+          <div className="search-field" style={{ flex: 1 }}>
+            <span className="search-icon"><SearchIcon size={15} /></span>
+            <input value={pickerQuery} onChange={(e) => setPickerQuery(e.target.value)} placeholder="Search photos..." aria-label="Search photos" />
+          </div>
+          <button className="quiet-button" type="button" onClick={browse}>Browse from Finder…</button>
+        </div>
+        {(() => {
+          const drafts = (props.items || []).filter((it: any) => { try { return !!localStorage.getItem(`edit:draft:${it.id}`); } catch { return false; } });
+          if (!drafts.length) return null;
+          return (
+            <div style={{ marginBottom: 16 }}>
+              <h3 style={{ margin: "0 0 8px", color: "var(--text)" }}>Drafts</h3>
+              <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8, marginBottom: 8 }}>
+                {drafts.map((item: any) => (
+                  <button key={item.id} type="button" className="edit-picker-tile" style={{ minWidth: 140, width: 140 }} onClick={() => props.onOpenEdit?.(item)}>
+                    <img src={props.assetUrl(item.path)} alt={item.name} />
+                    <span>{item.name}</span>
+                    <span className="draft-badge">Draft</span>
+                    <span className="draft-remove" onClick={(e) => { e.stopPropagation(); try { localStorage.removeItem(`edit:draft:${item.id}`); } catch {} props.onNotice?.("Draft removed"); }} title="Remove draft">×</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+        {filtered.length>0 ? (<div className="edit-picker-grid">{filtered.map((item:any)=> {
+  const hasDraft = (() => { try { return !!localStorage.getItem(`edit:draft:${item.id}`); } catch { return false; } })();
+  return (
+    <button key={item.id} type="button" className="edit-picker-tile" onClick={()=>props.onOpenEdit?.(item)}>
+      <img src={props.assetUrl(item.path)} alt={item.name}/>
+      <span>{item.name}</span>
+      {hasDraft && <span className="draft-badge">Draft</span>}
+      {hasDraft && <span className="draft-remove" onClick={(e) => { e.stopPropagation(); try { localStorage.removeItem(`edit:draft:${item.id}`); } catch {} props.onNotice?.("Draft removed"); }} title="Remove draft">×</span>}
+    </button>
+  );
+})}</div>) : (<div className="viewer-empty-state"><div style={{ marginBottom: 16 }}><BrandMark size={56} /></div><h2>No photos found</h2><p>Import a folder or browse from disk.</p></div>) }
       </div>
     );
   }
-  const values = props.values;
   return (
     <div className="edit-page">
       <div className="page-heading">
         <div><p className="eyebrow">NON-DESTRUCTIVE EDITING</p><h1>{props.item.name}</h1><p className="page-subtitle">Adjustments are applied only when you export a new copy.</p></div>
-        <span className="saved-indicator"><i /> Original unchanged</span>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button className="primary-button" type="button" onClick={() => props.onClose?.()}>Select photo</button>
+          <span className="saved-indicator"><i /> Original unchanged</span>
+        </div>
       </div>
       <div className="editor-layout">
         <div className="edit-canvas">
-          <img src={props.assetUrl(props.item.path)} alt={props.item.name} style={{ transform: `rotate(${values.rotation}deg) scaleX(${values.flip ? -1 : 1})`, filter: `brightness(${100 + values.exposure}%) contrast(${100 + values.contrast}%) saturate(${100 + values.saturation}%)`, maxWidth: "90%", maxHeight: "420px" }} />
+          <div ref={stageRef} className="crop-stage" style={{ position: "relative", display: "inline-block" }}>
+            <img src={props.assetUrl(props.item.path)} alt={props.item.name} style={{ transform: `rotate(${values.rotation}deg) scaleX(${values.flip ? -1 : 1})`, filter: `brightness(${100 + values.exposure}%) contrast(${100 + values.contrast}%) saturate(${100 + values.saturation}%)`, maxWidth: "90%", maxHeight: "420px", display: "block" }} />
+            {crop.enabled && (
+              <div className="crop-overlay" style={{ position: "absolute", left: `${crop.x*100}%`, top: `${crop.y*100}%`, width: `${crop.width*100}%`, height: `${crop.height*100}%`, border: "2px solid #fff", boxShadow: "0 0 0 9999px rgba(0,0,0,.45)", cursor: "move" }} onMouseDown={(e) => startDrag("move", e)}>
+                <span className="crop-handle br" style={{ position: "absolute", right: -6, bottom: -6, width: 12, height: 12, background: "#fff", border: "1px solid #333", cursor: "nwse-resize", borderRadius: 2 }} onMouseDown={(e) => startDrag("resize", e)} />
+              </div>
+            )}
+          </div>
           <div className="canvas-actions">
             <button type="button" onClick={() => props.onRotate(90)}><RotateIcon size={14} /> Rotate</button>
             <button type="button" onClick={props.onFlip}><FlipIcon size={14} /> Flip</button>
@@ -2783,7 +2932,7 @@ function EditScreen(props: any) {
           </div>
         </div>
         <aside className="edit-controls">
-          <div className="edit-tabs"><button className="active">Light & color</button><button type="button" onClick={() => props.onSetCrop({ enabled: !props.crop.enabled })}>Crop</button><button type="button" onClick={() => props.notice("ICC soft proofing requires native macOS color-management integration.")}>Proof</button></div>
+          <div className="edit-tabs"><button className="active">Light & color</button><button type="button" onClick={() => props.onSetCrop({ enabled: !props.crop.enabled })}>Crop</button></div>
           <div className="auto-adjust">
             <div><span className="feature-icon yellow-bg"><SparkleIcon size={17} /></span><div><b>Basic adjustments</b><small>Non-destructive preview</small></div></div>
             <button type="button" onClick={props.onAuto}>Auto</button>
@@ -2803,11 +2952,38 @@ function EditScreen(props: any) {
           ))}
           <div className="edit-footer">
             <button className="quiet-button" type="button" onClick={props.onReset}>Reset</button>
-            <button className="primary-button" type="button" onClick={props.onExport}>Export edited copy</button>
+            <button className="quiet-button" type="button" onClick={props.onClearDraft}>Discard draft</button>
+            <button className="quiet-button" type="button" onClick={props.onSaveDraft}>Save draft</button>
+            <button className="quiet-button" type="button" style={{ color: "#d33" }} onClick={() => setConfirmReplace(true)}>Replace original</button>
+            <button className="primary-button" type="button" onClick={() => props.onExport(false)}>Save copy</button>
           </div>
         </aside>
       </div>
+      <div className="drafts-row">
+        <h3 style={{ color: "var(--text)" }}>Drafts</h3>
+        <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8 }}>
+          {(props.items||[]).filter((it:any) => { try { return !!localStorage.getItem(`edit:draft:${it.id}`); } catch { return false; } }).map((item:any) => (
+            <button key={item.id} type="button" className="edit-picker-tile" style={{ minWidth: 120, width: 120, position: "relative" }} onClick={() => { props.onSaveDraft?.(); props.onOpenEdit?.(item); }}>
+              <img src={props.assetUrl(item.path)} alt={item.name} />
+              <span>{item.name}</span>
+              <span className="draft-remove" onClick={(e) => { e.stopPropagation(); try { localStorage.removeItem(`edit:draft:${item.id}`); } catch {} props.onNotice?.("Draft removed"); }} title="Remove draft">×</span>
+            </button>
+          ))}
+        </div>
+      </div>
       <p className="browser-capability-warning">Browser canvas export supports JPEG, PNG, and WebP input when the browser can decode it. HEIC and RAW need native macOS image frameworks. Metadata is removed from re-encoded exports.</p>
+      {confirmReplace && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+          <div style={{ background: "var(--surface)", padding: 20, borderRadius: 8, maxWidth: 420, width: "90%" }}>
+            <h3 style={{ margin: "0 0 8px", color: "var(--text)" }}>Replace original file?</h3>
+            <p style={{ margin: "0 0 16px", color: "var(--muted)" }}>This will overwrite the original image with the edited version. This cannot be undone.</p>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button className="quiet-button" type="button" onClick={() => setConfirmReplace(false)}>Cancel</button>
+              <button className="primary-button" type="button" style={{ background: "#d33", borderColor: "#d33" }} onClick={() => { setConfirmReplace(false); props.onExport(true); }}>Replace</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

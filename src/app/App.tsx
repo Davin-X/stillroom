@@ -1248,7 +1248,42 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             canUndo={edit.canUndo}
             canRedo={edit.canRedo}
             onClose={edit.close}
-            onExport={async () => showNotice("Export - coming soon")}
+            onExport={async () => {
+              const item = edit.item;
+              if (!item) return;
+              try {
+                const img = new Image();
+                img.crossOrigin = "anonymous";
+                img.src = assetUrl(item.path);
+                await new Promise((res, rej) => { img.onload = () => res(null); img.onerror = rej; });
+                const v = edit.values || {};
+                const rot = ((v.rotation || 0) % 360 + 360) % 360;
+                const swap = rot === 90 || rot === 270;
+                const canvas = document.createElement("canvas");
+                canvas.width = swap ? img.naturalHeight : img.naturalWidth;
+                canvas.height = swap ? img.naturalWidth : img.naturalHeight;
+                const ctx = canvas.getContext("2d");
+                if (!ctx) { showNotice("Export failed"); return; }
+                ctx.translate(canvas.width / 2, canvas.height / 2);
+                ctx.rotate((rot * Math.PI) / 180);
+                ctx.scale(v.flip ? -1 : 1, 1);
+                ctx.filter = "brightness(" + (100 + (v.exposure || 0)) + "%) contrast(" + (100 + (v.contrast || 0)) + "%) saturate(" + (100 + (v.saturation || 0)) + "%)";
+                ctx.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight / 2);
+                const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, "image/jpeg", 0.92));
+                if (!blob) { showNotice("Export failed"); return; }
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = String(item.name).replace(/\.[^.]+$/, "") + "_edited.jpg";
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                showNotice("Exported edited copy");
+              } catch (e) {
+                showNotice("Export failed");
+              }
+            }}
             assetUrl={assetUrl}
             items={library.items.filter((i: any) => i.kind === "photo")}
             onOpenEdit={(item: any) => { edit.open(item); }}

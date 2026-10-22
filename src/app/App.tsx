@@ -2830,7 +2830,7 @@ function EditScreen(props: any) {
           </div>
         </div>
         <aside className="edit-controls">
-          <div className="edit-tabs"><button className="active">Light & color</button><button type="button" onClick={() => props.onSetCrop({ enabled: !props.crop.enabled })}>Crop</button><button type="button" onClick={() => props.onNotice?.("ICC soft proofing requires native macOS color-management integration.")}>Proof</button></div>
+          <div className="edit-tabs"><button className="active">Light & color</button><button type="button" onClick={() => props.onSetCrop({ enabled: !props.crop.enabled })}>Crop</button></div>
           <div className="auto-adjust">
             <div><span className="feature-icon yellow-bg"><SparkleIcon size={17} /></span><div><b>Basic adjustments</b><small>Non-destructive preview</small></div></div>
             <button type="button" onClick={props.onAuto}>Auto</button>

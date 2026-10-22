@@ -43,7 +43,7 @@ export function SettingsScreen(props: {
   onRemoveFolder?: (folder: LibraryFolder) => void;
 }) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
-  const [sidebarWidth, setSidebarWidthState] = useState(220);
+  const sidebarWidth = useSidebarWidth();
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deletingLibrary, setDeletingLibrary] = useState(false);
@@ -91,16 +91,7 @@ export function SettingsScreen(props: {
   // Settings hydration and theme application are owned by App.tsx, which is
   // always mounted; Settings only reads and writes.
 
-  // Sync sidebar width from store
-  useEffect(() => {
-    const unsub = useSettingsStore.subscribe(
-      (state) => setSidebarWidthState(state.sidebarWidth)
-    );
-    return unsub;
-  }, []);
-
   const handleSidebarWidthChange = (width: number) => {
-    setSidebarWidthState(width);
     update("sidebarWidth", width);
   };
 

@@ -187,7 +187,7 @@
 }
 
 .app-frame .toggle-switch input:checked:active + .toggle-track::after {
-  transform: translateX(20px) scale(0.92);
+  transform: translateX(18px) scale(0.92);
 }
 
 .app-frame .radio-option:hover .radio-dot {

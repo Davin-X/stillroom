@@ -1159,7 +1159,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
               {vault.unlocked && (
               <div className="stat-row hidden">
                 <KindDot kind="photo" />
-                <span className="stat-label">Hidden</span>
+                <span className="stat-label">Private</span>
                 <span className="stat-value">
                   {libraryStats.hidden.toLocaleString()}
                   <span className="stat-size">· {formatBytesSimple(libraryStats.hiddenSize)}</span>
@@ -2361,7 +2361,7 @@ function LibraryScreen(props: any) {
                   const count = filterCounts[f as keyof typeof filterCounts] ?? 0;
                   return (
                     <button key={f} type="button" className={`quick-filter ${props.filter === f ? "active" : ""}`} onClick={() => props.onChangeFilter(f)}>
-                      {f}
+                      {f === "Hidden" ? "Private" : f}
                       <span className="filter-count">{count}</span>
                     </button>
                   );

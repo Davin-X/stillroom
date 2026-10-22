@@ -3143,6 +3143,7 @@ function BatchScreen(props: any) {
 }
 
 function VaultScreen(props: any) {
+  const [password, setPassword] = React.useState("");
   if (!props.unlocked) {
     return (
       <div className="vault-page">
@@ -3151,7 +3152,13 @@ function VaultScreen(props: any) {
           <p className="eyebrow">PRIVATE VAULT</p>
           <h2>Protected Photos</h2>
           <p>Items in the vault are encrypted and hidden from the main library. Unlock with Touch ID or password.</p>
-          <button className="primary-button" onClick={() => props.onUnlock(true)}>Unlock with Touch ID</button>
+          <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap", marginTop: 8 }}>
+            <button className="primary-button" onClick={() => props.onUnlock(true)}>Unlock with Touch ID</button>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap", marginTop: 12 }}>
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" style={{ minWidth: 200 }} />
+            <button className="quiet-button" type="button" onClick={() => { props.onUnlock(false); setPassword(""); }}>Unlock</button>
+          </div>
           <small>Or use password</small>
         </div>
       </div>
@@ -3169,10 +3176,10 @@ function VaultScreen(props: any) {
       </div>
       <div className="vault-thumbnails">
         {props.items.map((item: any) => (
-          <button key={item.id} type="button">
-            <img src={props.assetUrl(item.path)} alt={item.name} />
+          <button key={item.id} type="button" onClick={() => props.onRemoveItems([item.id])}>
+            {item.kind === "photo" ? <img src={props.assetUrl(item.path)} alt={item.name} /> : <div className="duplicate-nonimage"><KindBadge kind={item.kind} /></div>}
             <span>{item.name}</span>
-            <i>Unhide</i>
+            <i>Remove</i>
           </button>
         ))}
         {props.items.length === 0 && <p className="vault-empty">No items in vault. Select items in Library and add them here.</p>}

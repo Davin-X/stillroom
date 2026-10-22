@@ -3159,55 +3159,89 @@ function VaultScreen(props: any) {
   if (!props.unlocked) {
     return (
       <div className="vault-page">
-        <div className="vault-lock-card">
-          <div className="vault-lock-art"><VaultIcon size={28} /><i><LockIcon size={12} /></i></div>
-          <p className="eyebrow">PRIVATE VAULT</p>
-          <h2>Protected Photos</h2>
-          <p>Items in the vault are encrypted and hidden from the main library. Unlock with Touch ID or password.</p>
-          <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap", marginTop: 8 }}>
-            <button className="primary-button" onClick={() => props.onUnlock(true)}>Unlock with Touch ID</button>
+        <div style={{ maxWidth: 520, margin: "40px auto", padding: 40, border: "1px solid var(--line)", borderRadius: 16, background: "radial-gradient(ellipse at 50% 0%, rgba(142,132,225,.16), transparent 60%), var(--surface-2)", textAlign: "center" }}>
+          <div style={{ display: "grid", placeItems: "center", width: 72, height: 72, margin: "0 auto 20px", borderRadius: 20, border: "1px solid rgba(143,132,228,.3)", background: "linear-gradient(145deg, rgba(137,174,246,.18), rgba(191,145,220,.2))", color: "#8d86d4" }}>
+            <VaultIcon size={28} />
+            <LockIcon size={12} />
           </div>
-          <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap", marginTop: 12 }}>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" style={{ minWidth: 200 }} />
-            <button className="quiet-button" type="button" onClick={() => { props.onUnlock(false); setPassword(""); }}>Unlock</button>
+          <p className="eyebrow" style={{ color: "#8c87ca" }}>PRIVATE VAULT</p>
+          <h2 style={{ margin: "4px 0 8px", color: "var(--ink)", fontFamily: "Manrope, sans-serif", fontSize: 20, letterSpacing: "-.04em" }}>Protected Photos</h2>
+          <p style={{ maxWidth: 360, margin: "0 auto 20px", color: "var(--muted)", fontSize: 13, lineHeight: 1.7 }}>
+            Items in the vault are encrypted and hidden from the main library. Unlock with Touch ID or password.
+          </p>
+          <button className="primary-button" style={{ minHeight: 38, padding: "0 18px" }} onClick={() => props.onUnlock(true)}>
+            Unlock with Touch ID
+          </button>
+          <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap", marginTop: 14 }}>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Password"
+              style={{ minWidth: 200, minHeight: 34, padding: "0 10px", border: "1px solid var(--line)", borderRadius: 8, background: "var(--surface)", color: "var(--text)", fontSize: 13 }}
+            />
+            <button className="quiet-button" type="button" onClick={() => { props.onUnlock(false); setPassword(""); }} style={{ minHeight: 34 }}>
+              Unlock
+            </button>
           </div>
-          <small>Or use password</small>
+          <small style={{ display: "block", marginTop: 12, color: "var(--faint)", fontSize: 12 }}>Or use password</small>
         </div>
       </div>
     );
   }
   return (
     <div className="vault-page">
-      <div style={{ maxWidth: 760, margin: "0 auto", width: "100%" }}>
-        <div className="page-heading">
-          <div><p className="eyebrow">PRIVATE VAULT</p><h1>Vault Contents</h1><p className="page-subtitle">{props.items.length} protected items</p></div>
-          <div style={{ display: "flex", gap: 8 }}>
+      <div style={{ maxWidth: 960, margin: "0 auto", width: "100%", display: "grid", gap: 20 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
+          <div>
+            <p className="eyebrow">PRIVATE VAULT</p>
+            <h1 style={{ margin: "2px 0 4px", fontSize: 28, letterSpacing: "-.03em" }}>Vault Contents</h1>
+            <p className="page-subtitle" style={{ margin: 0 }}>{props.items.length} protected items</p>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button className="quiet-button" type="button" onClick={() => props.onNavigate?.("Library")}>Add from Library</button>
             <button className="quiet-button" type="button" onClick={props.onLock}>Lock vault</button>
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, maxWidth: 480, margin: "22px auto 0", padding: "12px 16px", border: "1px solid var(--line)", borderRadius: 8, background: "var(--surface-2)" }}>
+
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, maxWidth: 480, padding: "14px 18px", border: "1px solid var(--line)", borderRadius: 10, background: "var(--surface-2)" }}>
           <div style={{ display: "grid", gap: 2 }}>
-            <b style={{ color: "var(--text)", fontSize: 12 }}>Auto-lock</b>
-            <small style={{ color: "var(--muted)", fontSize: 13 }}>Lock after {props.autoLock} minutes of inactivity</small>
+            <b style={{ color: "var(--text)", fontSize: 13 }}>Auto-lock</b>
+            <small style={{ color: "var(--muted)", fontSize: 12 }}>Lock after {props.autoLock} minutes of inactivity</small>
           </div>
           <input type="range" min={1} max={60} value={props.autoLock} onChange={(e) => props.onSetAutoLock(Number(e.target.value))} style={{ width: 160, maxWidth: "100%" }} />
         </div>
-        <div className="vault-thumbnails">
-          {props.items.map((item: any) => (
-            <button key={item.id} type="button" onClick={() => props.onRemoveItems([item.id])}>
-              {item.kind === "photo" ? <img src={props.assetUrl(item.path)} alt={item.name} /> : <div className="duplicate-nonimage"><KindBadge kind={item.kind} /></div>}
-              <span>{item.name}</span>
-              <i>Remove</i>
-            </button>
-          ))}
-          {props.items.length === 0 && (
-            <div className="vault-empty">
-              <p>No items in vault. Select items in Library and add them here.</p>
-              <button className="primary-button" type="button" onClick={() => props.onNavigate?.("Library")}>Browse Library</button>
-            </div>
-          )}
-        </div>
+
+        {props.items.length === 0 ? (
+          <div style={{ display: "grid", placeItems: "center", gap: 12, padding: "48px 20px", border: "1px dashed var(--line-strong)", borderRadius: 12, background: "var(--surface-2)", textAlign: "center" }}>
+            <div style={{ fontSize: 32, color: "var(--muted)" }}>🔒</div>
+            <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, maxWidth: 320 }}>
+              No items in vault. Select items in Library and add them here.
+            </p>
+            <button className="primary-button" type="button" onClick={() => props.onNavigate?.("Library")}>Browse Library</button>
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12 }}>
+            {props.items.map((item: any) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => props.onRemoveItems([item.id])}
+                style={{ display: "grid", gap: 8, padding: 8, border: "1px solid var(--line)", borderRadius: 10, background: "var(--surface)", color: "var(--text)", textAlign: "left", cursor: "pointer" }}
+              >
+                {item.kind === "photo" ? (
+                  <img src={props.assetUrl(item.path)} alt={item.name} style={{ width: "100%", height: 120, objectFit: "cover", borderRadius: 6 }} />
+                ) : (
+                  <div style={{ display: "grid", placeItems: "center", height: 120, borderRadius: 6, background: "var(--surface-3)", color: "var(--muted)" }}>
+                    <KindBadge kind={item.kind} />
+                  </div>
+                )}
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12 }}>{item.name}</span>
+                <i style={{ alignSelf: "start", padding: "3px 8px", border: "1px solid var(--line)", borderRadius: 6, color: "var(--accent-text)", fontSize: 11, fontStyle: "normal", width: "fit-content" }}>Remove</i>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

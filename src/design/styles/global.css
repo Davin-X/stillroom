@@ -1368,3 +1368,4 @@ body {
 .semantic-search { width: 100%; max-width: 720px; }
 .feature-page { padding-top: 12px; }
 .semantic-hero { position: static; }
+.feature-page { max-height: 100%; overflow-y: auto; }

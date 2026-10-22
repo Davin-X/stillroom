@@ -3352,11 +3352,10 @@ function ExploreScreen(props: any) {
     props.onNavigate("Library");
   };
 
-  const extensions = React.useMemo(() => [...new Set(items.map((i: any) => (i.extension || "").toUpperCase()).filter(Boolean))].slice(0, 8), [items]);
-  const folders = React.useMemo(() => [...new Set(items.map((i: any) => (i.path || "").split("/").slice(0, -1).join("/")).filter(Boolean))].slice(0, 6), [items]);
-  const tags = React.useMemo(() => [...new Set(items.flatMap((i: any) => i.tags || []))].slice(0, 8), [items]);
-  const suggestions = React.useMemo(() => [...extensions, ...folders].slice(0, 10), [extensions, folders]);
-  const previewItems = React.useMemo(() => items.slice(0, 12), [items]);
+  const extensions = React.useMemo(() => [...new Set(items.map((i: any) => (i.extension || "").toUpperCase()).filter(Boolean))].slice(0, 12), [items]);
+  const tags = React.useMemo(() => [...new Set(items.flatMap((i: any) => i.tags || []))].slice(0, 12), [items]);
+  const suggestions = React.useMemo(() => [...new Set([...extensions, ...tags])].slice(0, 12), [extensions, tags]);
+  const previewItems = React.useMemo(() => items.slice(0, 8), [items]);
 
   const clearRecent = () => {
     setRecent([]);
@@ -3366,64 +3365,69 @@ function ExploreScreen(props: any) {
   return (
     <div className="feature-page">
       <div className="page-heading">
-        <div><p className="eyebrow">SEARCH & DISCOVERY</p><h1>Find the moment.</h1><p className="page-subtitle">Search filenames, folders, tags, and formats. Everything stays on your device.</p></div>
+        <div><p className="eyebrow">SEARCH & DISCOVERY</p><h1>Explore</h1><p className="page-subtitle">Find photos by name, path, tag, or format.</p></div>
       </div>
 
-      <div className="semantic-hero">
-        <div className="semantic-orb"><SearchIcon size={22} /></div>
-        <div><span className="eyebrow">PRIVATE LIBRARY SEARCH</span><h2>What are you looking for?</h2><p>Search works on names, paths, tags, and formats. No photos leave your device.</p></div>
-        <div className="semantic-search"><SearchIcon size={15} /><input value={query} onChange={(e) => setQueryState(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") runSearch(query); else if (e.key === "Escape" && query) { setQueryState(""); library.setQuery(""); } }} placeholder="Search a filename, folder, tag, or format" /><kbd>↵</kbd></div>
-        <div className="search-suggestions">
-          <span>In your library:</span>
-          {suggestions.length ? suggestions.map((s: any) => <button type="button" key={s} onClick={() => runSearch(s)}>{s}</button>) : <small>Open a folder to index local names.</small>}
+      <div className="semantic-hero" style={{ padding: "16px 20px" }}>
+        <div className="semantic-search" style={{ margin: "0 auto" }}><SearchIcon size={15} /><input value={query} onChange={(e) => setQueryState(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") runSearch(query); else if (e.key === "Escape" && query) { setQueryState(""); library.setQuery(""); } }} placeholder="Search filename, folder, tag, or format" /><kbd>↵</kbd></div>
+        <div className="search-suggestions" style={{ justifyContent: "center" }}>
+          {suggestions.length ? suggestions.map((s: any) => <button type="button" key={s} onClick={() => runSearch(s)}>{s}</button>) : <small>Open a folder to index names.</small>}
         </div>
       </div>
 
       {recent.length > 0 && (
-        <div className="feature-card">
-          <div className="feature-card-heading"><div><h3>Recent searches</h3><p>Jump back to a previous query.</p></div><button type="button" className="quiet-button" onClick={clearRecent}>Clear</button></div>
-          <div className="search-suggestions">{recent.map((r: any) => <button type="button" key={r} onClick={() => runSearch(r)}>{r}</button>)}</div>
+        <div className="feature-card" style={{ padding: "12px 16px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>Recent searches</h3>
+            <button type="button" className="quiet-button" onClick={clearRecent}>Clear</button>
+          </div>
+          <div className="search-suggestions" style={{ justifyContent: "flex-start" }}>{recent.map((r: any) => <button type="button" key={r} onClick={() => runSearch(r)}>{r}</button>)}</div>
         </div>
       )}
 
-      <div className="feature-grid two">
-        <div className="feature-card">
-          <div className="feature-card-heading"><span className="feature-icon violet-bg"><UsersIcon size={17} /></span><div><h3>Smart filters</h3><p>Quickly narrow the library.</p></div></div>
-          <div className="rule-line"><span>Favorites</span><b>{items.filter((i: any) => i.favorite).length}</b><button type="button" onClick={() => applyFilter("Favorites")}>Show</button></div>
-          <div className="rule-line"><span>Videos</span><b>{items.filter((i: any) => i.kind === "video").length}</b><button type="button" onClick={() => applyFilter("Videos")}>Show</button></div>
-          <div className="rule-line"><span>RAW</span><b>{items.filter((i: any) => i.kind === "raw").length}</b><button type="button" onClick={() => applyFilter("RAW")}>Show</button></div>
-          <div className="rule-line"><span>Hidden</span><b>{items.filter((i: any) => i.hidden).length}</b><button type="button" onClick={() => applyFilter("Hidden")}>Show</button></div>
-        </div>
-        <div className="feature-card">
-          <div className="feature-card-heading"><span className="feature-icon green-bg"><TagIcon size={17} /></span><div><h3>Tags & formats</h3><p>Explore by metadata.</p></div></div>
-          <div className="search-suggestions">
-            {tags.map((t: any) => <button type="button" key={t} onClick={() => runSearch(t)}>{t}</button>)}
-            {extensions.map((e: any) => <button type="button" key={e} onClick={() => runSearch(e)}>{e}</button>)}
-            {!tags.length && !extensions.length && <small>No tags or formats yet.</small>}
-          </div>
-        </div>
-      </div>
-
-      <div className="feature-card">
-        <div className="feature-card-heading"><div><h3>Recently added</h3><p>Latest items in your library.</p></div><button type="button" className="quiet-button" onClick={() => props.onNavigate("Library")}>View all</button></div>
-        <div className="duplicate-grid">
-          {previewItems.map((item: any) => (
-            <div className="duplicate-card" key={item.id} onClick={() => { library.inspectItem(item.id); props.onNavigate("Library"); }}>
-              {item.kind === "photo" ? <img src={props.assetUrl(item.path)} alt={item.name} /> : <div className="duplicate-nonimage"><KindBadge kind={item.kind} /></div>}
-              <div><span>{item.name}</span><small>{formatBytesSimple(item.size)}</small></div>
-            </div>
+      <div className="feature-card" style={{ padding: "12px 16px" }}>
+        <h3 style={{ margin: "0 0 8px" }}>Smart filters</h3>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {[
+            { label: "Favorites", value: "Favorites", count: items.filter((i: any) => i.favorite).length },
+            { label: "Videos", value: "Videos", count: items.filter((i: any) => i.kind === "video").length },
+            { label: "RAW", value: "RAW", count: items.filter((i: any) => i.kind === "raw").length },
+            { label: "Hidden", value: "Hidden", count: items.filter((i: any) => i.hidden).length },
+          ].map((f: any) => (
+            <button key={f.value} type="button" className="quiet-button" onClick={() => applyFilter(f.value)} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              {f.label} <span style={{ opacity: 0.6 }}>{f.count}</span>
+            </button>
           ))}
         </div>
       </div>
 
-      <div className="feature-grid two">
-        <div className="feature-card">
-          <div className="feature-card-heading"><span className="feature-icon violet-bg"><HeartIcon size={17} /></span><div><h3>Favorites</h3><p>{items.filter((i: any) => i.favorite).length} starred items.</p></div><button type="button" className="quiet-button" onClick={() => applyFilter("Favorites")}>Open</button></div>
+      {(tags.length > 0 || extensions.length > 0) && (
+        <div className="feature-card" style={{ padding: "12px 16px" }}>
+          <h3 style={{ margin: "0 0 8px" }}>Tags & formats</h3>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {[...tags, ...extensions].map((t: any) => (
+              <button key={t} type="button" className="quiet-button" onClick={() => runSearch(t)}>{t}</button>
+            ))}
+          </div>
         </div>
-        <div className="feature-card">
-          <div className="feature-card-heading"><span className="feature-icon green-bg"><SparkleIcon size={17} /></span><div><h3>Coming soon</h3><p>On-device faces, objects, scenes, and OCR search.</p></div><span className="beta-badge">FUTURE</span></div>
+      )}
+
+      {previewItems.length > 0 && (
+        <div className="feature-card" style={{ padding: "12px 16px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>Recently added</h3>
+            <button type="button" className="quiet-button" onClick={() => props.onNavigate("Library")}>View all</button>
+          </div>
+          <div className="duplicate-grid">
+            {previewItems.map((item: any) => (
+              <div className="duplicate-card" key={item.id} onClick={() => { library.inspectItem(item.id); props.onNavigate("Library"); }}>
+                {item.kind === "photo" ? <img src={props.assetUrl(item.path)} alt={item.name} /> : <div className="duplicate-nonimage"><KindBadge kind={item.kind} /></div>}
+                <div><span>{item.name}</span><small>{formatBytesSimple(item.size)}</small></div>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

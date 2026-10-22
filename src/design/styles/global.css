@@ -296,9 +296,10 @@ kbd { padding: 2px 4px; border: 1px solid var(--line-strong); border-radius: 4px
 .batch-form-check b { color: var(--text); font-size:12px; }
 .batch-form-check small { color: var(--muted); font-size:13px; line-height: 1.5; }
 .export-destination small { color: var(--muted); font-size:13px; line-height: 1.5; }
-.vault-settings { margin-top: 22px; }
-.vault-settings > div { border: 0; }
-.vault-unlocked { width: 100%; max-width: 760px; }
+.vault-settings { margin: 22px auto 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; max-width: 480px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); }
+.vault-settings > div { display: grid; gap: 2px; border: 0; min-height: 0; }
+.vault-settings input[type="range"] { width: 160px; max-width: 100%; }
+.vault-unlocked { width: 100%; max-width: 760px; margin: 20px auto; }
 .vault-thumbnails button { display: grid; grid-template-columns: 70px 1fr auto; align-items: center; gap: 9px; padding: 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); text-align: left; font-size:12px; }
 .vault-thumbnails button img { width: 70px; height: 52px; }
 .vault-thumbnails button > span { overflow: hidden; text-overflow: ellipsis; }
@@ -601,6 +602,8 @@ body {
   --accent-soft: color-mix(in srgb, var(--accent) 12%, var(--surface));
   --blue-soft: var(--accent-soft);
   --green: #27845f;
+  --orange: #f97316;
+  --orange-soft: rgba(249, 115, 22, 0.12);
   /* Field chrome: the outer border, the inner hairline that makes a control
      look carved into the surface, and the top-edge shadow that gives the
      recessed area a little depth. */
@@ -643,6 +646,8 @@ body {
   --accent-soft: color-mix(in srgb, var(--accent) 12%, var(--surface));
   --blue-soft: var(--accent-soft);
   --green: #6bc69a;
+  --orange: #fb923c;
+  --orange-soft: rgba(251, 146, 60, 0.15);
   --field-line: #39414d;
   --field-line-hover: #4c5663;
   --field-inner: rgba(0, 0, 0, 0.3);
@@ -1367,3 +1372,6 @@ body {
 .semantic-hero { position: sticky; top: 60px; z-index: 3; padding: 18px 20px; }
 .semantic-search { width: 100%; max-width: 720px; }
 .feature-page { padding-top: 12px; }
+.semantic-hero { position: static; }
+.feature-page { max-height: 100%; overflow-y: auto; }
+.feature-page { min-height: 0; }

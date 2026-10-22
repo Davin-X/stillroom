@@ -139,7 +139,7 @@ function computeDerived(state: LibraryState) {
   if (query.trim()) {
     const normalized = query.trim().toLowerCase();
     visible = visible.filter((item) =>
-      `${item.name} ${item.camera || ""} ${item.lens || ""} ${item.tags.join(" ")}`.toLowerCase().includes(normalized)
+      `${item.name} ${item.path} ${item.extension} ${item.kind} ${item.camera || ""} ${item.lens || ""} ${(item.tags || []).join(" ")}`.toLowerCase().includes(normalized)
     );
   }
 

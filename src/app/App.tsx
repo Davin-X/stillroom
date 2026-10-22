@@ -44,9 +44,9 @@ import { SourcesManager } from "../design/components/SourcesManager";
 import { SlideshowOverlay } from "../design/components/SlideshowOverlay";
 import { ContextMenu } from "../design/components/ContextMenu";
 import { BrandMark } from "../design/components/BrandMark";
-import { GearIcon, SunIcon, MoonIcon, LibraryIcon, AlbumsIcon, ViewerIcon, ExploreIcon, DuplicatesIcon, EditIcon, BatchIcon, VaultIcon, SearchIcon, PlusIcon, MinusIcon, MoreIcon, InspectorIcon, FolderIcon, GridIcon, OverviewIcon, ColumnsIcon, DetailsIcon, TimelineIcon, HeartIcon, EyeIcon, EyeOffIcon, FullscreenIcon, RotateIcon, CropIcon, FlipIcon, PlayIcon, PauseIcon, SparkleIcon, UsersIcon, TagIcon, ImageOffIcon, LockIcon, ShareIcon, CheckIcon } from "../design/components/icons";
+import { GearIcon, SunIcon, MoonIcon, LibraryIcon, AlbumsIcon, ViewerIcon, DuplicatesIcon, EditIcon, BatchIcon, VaultIcon, SearchIcon, PlusIcon, MinusIcon, MoreIcon, InspectorIcon, FolderIcon, GridIcon, OverviewIcon, ColumnsIcon, DetailsIcon, TimelineIcon, HeartIcon, EyeIcon, EyeOffIcon, FullscreenIcon, RotateIcon, CropIcon, FlipIcon, PlayIcon, PauseIcon, SparkleIcon, UsersIcon, TagIcon, ImageOffIcon, LockIcon, ShareIcon, CheckIcon } from "../design/components/icons";
 
-type Screen = "Library" | "Albums" | "Viewer" | "Explore" | "Duplicates" | "Edit" | "Batch" | "Vault" | "Settings";
+type Screen = "Library" | "Albums" | "Viewer" | "Duplicates" | "Edit" | "Batch" | "Vault" | "Settings";
 
 const initialEdits = { exposure: 0, contrast: 0, warmth: 0, shadows: 0, highlights: 0, saturation: 0, rotation: 0, flip: false };
 
@@ -161,6 +161,9 @@ function App() {
   const viewer = useViewerStore();
   const edit = useEditStore();
   const vault = useVaultStore();
+  React.useEffect(() => {
+    if (!vault.unlocked && library.filter === "Hidden") library.setFilter("All");
+  }, [vault.unlocked, library.filter]);
   const batch = useBatchStore();
   const settings = useSettingsStore();
 
@@ -1070,7 +1073,6 @@ handlersRef.current = { importFolder, importFiles, showNotice };
                 { label: "Library", Icon: LibraryIcon, screen: "Library" as Screen },
                 { label: "Albums", Icon: AlbumsIcon, screen: "Albums" as Screen },
                 { label: "Viewer", Icon: ViewerIcon, screen: "Viewer" as Screen },
-                { label: "Explore", Icon: ExploreIcon, screen: "Explore" as Screen },
                 { label: "Duplicates", Icon: DuplicatesIcon, screen: "Duplicates" as Screen },
                 { label: "Edit", Icon: EditIcon, screen: "Edit" as Screen },
                 { label: "Batch", Icon: BatchIcon, screen: "Batch" as Screen },
@@ -1154,14 +1156,16 @@ handlersRef.current = { importFolder, importFiles, showNotice };
                   <span className="stat-size">· {formatBytesSimple(libraryStats.favoriteSize)}</span>
                 </span>
               </div>
+              {vault.unlocked && (
               <div className="stat-row hidden">
                 <KindDot kind="photo" />
-                <span className="stat-label">Hidden</span>
+                <span className="stat-label">Private</span>
                 <span className="stat-value">
                   {libraryStats.hidden.toLocaleString()}
                   <span className="stat-size">· {formatBytesSimple(libraryStats.hiddenSize)}</span>
                 </span>
               </div>
+              )}
               <div className="stat-row size">
                 <span className="stat-label">Total</span>
                 <span className="stat-value">
@@ -1181,6 +1185,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             query={library.query}
             layout={library.layout}
             showInspector={library.showInspector}
+            showHidden={vault.unlocked}
             activeAlbum={library.activeAlbum}
             albums={library.albums}
             onInspectItem={library.inspectItem}
@@ -1196,6 +1201,15 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             onOpenAlbums={() => openScreen("Albums")}
             onAddItems={(albumId: string) => addItemsToAlbum(albumId)}
             onOpenAlbumPicker={(itemIds?: string[]) => openAlbumPicker(itemIds)}
+            onAddToVault={(ids: string[]) => {
+              if (!vault.unlocked) {
+                showNotice?.("Unlock the vault first, then add items.");
+                setScreen("Vault");
+                return;
+              }
+              vault.addItems(ids);
+              setScreen("Vault");
+            }}
             onAlbumMenu={(e: React.MouseEvent) => {
               const album = library.albums.find((a: any) => a.id === library.activeAlbum);
               if (album) openAlbumMenu(album, e);
@@ -1371,16 +1385,18 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             unlocked={vault.unlocked}
             items={vault.items}
             autoLock={vault.autoLockMinutes}
+            assetUrl={assetUrl}
             onUnlock={vault.unlock}
             onLock={vault.lock}
             onAddItems={(ids: any) => { vault.addItems(ids); }}
             onRemoveItems={vault.removeItems}
             onToggleEnabled={(e: any) => vault.toggleEnabled(e)}
             onSetAutoLock={(m: any) => vault.setAutoLock(m)}
+            onNavigate={setScreen}
+            onCreateAlbum={openAlbumDialog}
             notice={showNotice}
           />}
 
-          {screen === "Explore" && <ExploreScreen items={library.items.filter((i: any) => !i.hidden)} assetUrl={assetUrl} />}
 
           {screen === "Duplicates" && <DuplicatesScreen
             groups={library.duplicates}
@@ -2353,11 +2369,11 @@ function LibraryScreen(props: any) {
               </div>
               <div className="filter-cluster">
                 <span className="smart-label">SHOW</span>
-                {["All", "Photos", "Videos", "RAW", "Favorites", "Hidden"].map((f) => {
+                {[...(["All", "Photos", "Videos", "RAW", "Favorites"] as string[]), ...(props.showHidden ? ["Hidden"] : [])].map((f) => {
                   const count = filterCounts[f as keyof typeof filterCounts] ?? 0;
                   return (
                     <button key={f} type="button" className={`quick-filter ${props.filter === f ? "active" : ""}`} onClick={() => props.onChangeFilter(f)}>
-                      {f}
+                      {f === "Hidden" ? "Private" : f}
                       <span className="filter-count">{count}</span>
                     </button>
                   );
@@ -2406,6 +2422,16 @@ function LibraryScreen(props: any) {
               >
                 <AlbumsIcon size={13} /> Add to album
               </button>
+              {props.onAddToVault && (
+                <button
+                  type="button"
+                  className="selection-bar-action"
+                  onClick={() => { props.onAddToVault(props.selectedIds); props.onClearSelection?.(); }}
+                  title="Add selected items to the vault"
+                >
+                  <LockIcon size={13} /> Add to vault
+                </button>
+              )}
               {inAlbum && (
                 <button
                   type="button"
@@ -3139,15 +3165,43 @@ function BatchScreen(props: any) {
 }
 
 function VaultScreen(props: any) {
+  const [password, setPassword] = React.useState("");
   if (!props.unlocked) {
     return (
       <div className="vault-page">
+        <div className="page-heading">
+          <div>
+            <p className="eyebrow" style={{ color: "#8c87ca" }}>PRIVATE VAULT</p>
+            <h1>Protected Photos</h1>
+            <p className="page-subtitle">
+              Items in the vault are encrypted and hidden from the main library. Unlock with Touch ID or password.
+            </p>
+          </div>
+        </div>
         <div className="vault-lock-card">
-          <div className="vault-lock-art"><VaultIcon size={28} /><i><LockIcon size={12} /></i></div>
+          <div className="vault-lock-art">
+            <VaultIcon size={28} />
+            <i><LockIcon size={12} /></i>
+          </div>
           <p className="eyebrow">PRIVATE VAULT</p>
           <h2>Protected Photos</h2>
-          <p>Items in the vault are encrypted and hidden from the main library. Unlock with Touch ID or password.</p>
-          <button className="primary-button" onClick={() => props.onUnlock(true)}>Unlock with Touch ID</button>
+          <p>
+            Items in the vault are encrypted and hidden from the main library. Unlock with Touch ID or password.
+          </p>
+          <button className="primary-button" type="button" onClick={() => props.onUnlock(true)}>
+            Unlock with Touch ID
+          </button>
+          <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap", marginTop: 14 }}>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Password"
+            />
+            <button className="quiet-button" type="button" onClick={() => { props.onUnlock(false); setPassword(""); }}>
+              Unlock
+            </button>
+          </div>
           <small>Or use password</small>
         </div>
       </div>
@@ -3156,26 +3210,78 @@ function VaultScreen(props: any) {
   return (
     <div className="vault-page">
       <div className="page-heading">
-        <div><p className="eyebrow">PRIVATE VAULT</p><h1>Vault Contents</h1><p className="page-subtitle">{props.items.length} protected items</p></div>
-        <button className="quiet-button" type="button" onClick={props.onLock}>Lock vault</button>
+        <div>
+          <p className="eyebrow">PRIVATE VAULT</p>
+          <h1>Vault Contents</h1>
+          <p className="page-subtitle">{props.items.length} protected items</p>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, alignItems: "flex-end" }}>
+          <div className="vault-settings" style={{ margin: 0 }}>
+            <div>
+              <b>Auto-lock</b>
+              <small>Lock after {props.autoLock} minutes of inactivity</small>
+            </div>
+            <input
+              type="range"
+              min={1}
+              max={60}
+              value={props.autoLock}
+              onChange={(e) => props.onSetAutoLock(Number(e.target.value))}
+            />
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button className="quiet-button" type="button" onClick={() => props.onNavigate?.("Library")}>
+              Add from Library
+            </button>
+            <button className="quiet-button" type="button" onClick={props.onLock}>
+              Lock vault
+            </button>
+          </div>
+        </div>
       </div>
-      <div className="vault-settings">
-        <div><b>Auto-lock</b><small>Lock after {props.autoLock} minutes of inactivity</small></div>
-        <input type="range" min={1} max={60} value={props.autoLock} onChange={(e) => props.onSetAutoLock(Number(e.target.value))} />
-      </div>
-      <div className="vault-thumbnails">
-        {props.items.map((item: any) => (
-          <button key={item.id} type="button">
-            <img src={props.assetUrl(item.path)} alt={item.name} />
-            <span>{item.name}</span>
-            <i>Unhide</i>
-          </button>
-        ))}
-        {props.items.length === 0 && <p className="vault-empty">No items in vault. Select items in Library and add them here.</p>}
-      </div>
+
+      {props.items.length === 0 ? (
+        <div className="empty-state">
+          <span>🔒</span>
+          <b>No items in vault</b>
+          <p>Select items in Library and add them here, or create an album for your protected photos.</p>
+          <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+            <button className="primary-button" type="button" onClick={() => props.onNavigate?.("Library")}>
+              Browse Library
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="vault-unlocked">
+          <div className="vault-unlocked-head">
+            <div>
+              <h2>Vault Contents</h2>
+              <p>{props.items.length} protected items</p>
+            </div>
+          </div>
+          <div className="vault-thumbnails">
+            {props.items.map((item: any) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => props.onRemoveItems([item.id])}
+              >
+                {item.kind === "photo" ? (
+                  <img src={props.assetUrl(item.path)} alt={item.name} />
+                ) : (
+                  <KindBadge kind={item.kind} />
+                )}
+                <span>{item.name}</span>
+                <i>Remove</i>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
 
 /** Fan out up to three album photos like a loose stack of prints. */
 function albumStackPose(count: number, index: number) {
@@ -3318,112 +3424,6 @@ function AlbumsScreen(props: any) {
           </button>
         </div>
       )}
-    </div>
-  );
-}
-
-function ExploreScreen(props: any) {
-  const library = useLibraryStore();
-  const [query, setQueryState] = React.useState("");
-  const [recent, setRecent] = React.useState<string[]>(() => {
-    try { return JSON.parse(localStorage.getItem("explore:recent") || "[]"); } catch { return []; }
-  });
-
-  const items = props.items || [];
-
-  const saveRecent = (q: string) => {
-    const trimmed = q.trim();
-    if (!trimmed) return;
-    const next = [trimmed, ...recent.filter((r) => r !== trimmed)].slice(0, 8);
-    setRecent(next);
-    try { localStorage.setItem("explore:recent", JSON.stringify(next)); } catch {}
-  };
-
-  const runSearch = (q: string) => {
-    const val = q.trim();
-    setQueryState(val);
-    library.setQuery(val);
-    if (val) saveRecent(val);
-    library.setScreen("Library");
-  };
-
-  const applyFilter = (filter: Filter) => {
-    library.setFilter(filter);
-    library.setScreen("Library");
-  };
-
-  const extensions = React.useMemo(() => [...new Set(items.map((i: any) => (i.extension || "").toUpperCase()).filter(Boolean))].slice(0, 8), [items]);
-  const folders = React.useMemo(() => [...new Set(items.map((i: any) => (i.path || "").split("/").slice(0, -1).join("/")).filter(Boolean))].slice(0, 6), [items]);
-  const tags = React.useMemo(() => [...new Set(items.flatMap((i: any) => i.tags || []))].slice(0, 8), [items]);
-  const suggestions = React.useMemo(() => [...extensions, ...folders].slice(0, 10), [extensions, folders]);
-  const previewItems = React.useMemo(() => items.slice(0, 12), [items]);
-
-  const clearRecent = () => {
-    setRecent([]);
-    try { localStorage.removeItem("explore:recent"); } catch {}
-  };
-
-  return (
-    <div className="feature-page">
-      <div className="page-heading">
-        <div><p className="eyebrow">SEARCH & DISCOVERY</p><h1>Find the moment.</h1><p className="page-subtitle">Search filenames, folders, tags, and formats. Everything stays on your device.</p></div>
-      </div>
-
-      <div className="semantic-hero">
-        <div className="semantic-orb"><SearchIcon size={22} /></div>
-        <div><span className="eyebrow">PRIVATE LIBRARY SEARCH</span><h2>What are you looking for?</h2><p>Search works on names, paths, tags, and formats. No photos leave your device.</p></div>
-        <div className="semantic-search"><SearchIcon size={15} /><input value={query} onChange={(e) => setQueryState(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") runSearch(query); else if (e.key === "Escape" && query) { setQueryState(""); library.setQuery(""); } }} placeholder="Search a filename, folder, tag, or format" /><kbd>↵</kbd></div>
-        <div className="search-suggestions">
-          <span>In your library:</span>
-          {suggestions.length ? suggestions.map((s: any) => <button type="button" key={s} onClick={() => runSearch(s)}>{s}</button>) : <small>Open a folder to index local names.</small>}
-        </div>
-      </div>
-
-      {recent.length > 0 && (
-        <div className="feature-card">
-          <div className="feature-card-heading"><div><h3>Recent searches</h3><p>Jump back to a previous query.</p></div><button type="button" className="quiet-button" onClick={clearRecent}>Clear</button></div>
-          <div className="search-suggestions">{recent.map((r: any) => <button type="button" key={r} onClick={() => runSearch(r)}>{r}</button>)}</div>
-        </div>
-      )}
-
-      <div className="feature-grid two">
-        <div className="feature-card">
-          <div className="feature-card-heading"><span className="feature-icon violet-bg"><UsersIcon size={17} /></span><div><h3>Smart filters</h3><p>Quickly narrow the library.</p></div></div>
-          <div className="rule-line"><span>Favorites</span><b>{items.filter((i: any) => i.favorite).length}</b><button type="button" onClick={() => applyFilter("Favorites")}>Show</button></div>
-          <div className="rule-line"><span>Videos</span><b>{items.filter((i: any) => i.kind === "video").length}</b><button type="button" onClick={() => applyFilter("Videos")}>Show</button></div>
-          <div className="rule-line"><span>RAW</span><b>{items.filter((i: any) => i.kind === "raw").length}</b><button type="button" onClick={() => applyFilter("RAW")}>Show</button></div>
-          <div className="rule-line"><span>Hidden</span><b>{items.filter((i: any) => i.hidden).length}</b><button type="button" onClick={() => applyFilter("Hidden")}>Show</button></div>
-        </div>
-        <div className="feature-card">
-          <div className="feature-card-heading"><span className="feature-icon green-bg"><TagIcon size={17} /></span><div><h3>Tags & formats</h3><p>Explore by metadata.</p></div></div>
-          <div className="search-suggestions">
-            {tags.map((t: any) => <button type="button" key={t} onClick={() => runSearch(t)}>{t}</button>)}
-            {extensions.map((e: any) => <button type="button" key={e} onClick={() => runSearch(e)}>{e}</button>)}
-            {!tags.length && !extensions.length && <small>No tags or formats yet.</small>}
-          </div>
-        </div>
-      </div>
-
-      <div className="feature-card">
-        <div className="feature-card-heading"><div><h3>Recently added</h3><p>Latest items in your library.</p></div><button type="button" className="quiet-button" onClick={() => library.setScreen("Library")}>View all</button></div>
-        <div className="duplicate-grid">
-          {previewItems.map((item: any) => (
-            <div className="duplicate-card" key={item.id} onClick={() => { library.inspectItem(item.id); library.setScreen("Library"); }}>
-              {item.kind === "photo" ? <img src={props.assetUrl(item.path)} alt={item.name} /> : <div className="duplicate-nonimage"><KindBadge kind={item.kind} /></div>}
-              <div><span>{item.name}</span><small>{formatBytesSimple(item.size)}</small></div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="feature-grid two">
-        <div className="feature-card">
-          <div className="feature-card-heading"><span className="feature-icon violet-bg"><HeartIcon size={17} /></span><div><h3>Favorites</h3><p>{items.filter((i: any) => i.favorite).length} starred items.</p></div><button type="button" className="quiet-button" onClick={() => applyFilter("Favorites")}>Open</button></div>
-        </div>
-        <div className="feature-card">
-          <div className="feature-card-heading"><span className="feature-icon green-bg"><SparkleIcon size={17} /></span><div><h3>Coming soon</h3><p>On-device faces, objects, scenes, and OCR search.</p></div><span className="beta-badge">FUTURE</span></div>
-        </div>
-      </div>
     </div>
   );
 }

@@ -2950,8 +2950,7 @@ function EditScreen(props: any) {
             <button className="quiet-button" type="button" onClick={props.onReset}>Reset</button>
             <button className="quiet-button" type="button" onClick={props.onClearDraft}>Discard draft</button>
             <button className="quiet-button" type="button" onClick={props.onSaveDraft}>Save draft</button>
-            <button className="quiet-button" type="button" style={{ color: confirmReplace ? "#fff" : "#d33", background: confirmReplace ? "#d33" : "transparent" }} onClick={() => { if (confirmReplace) { setConfirmReplace(false); props.onExport(true); } else { setConfirmReplace(true); } }}>{confirmReplace ? "Confirm replace?" : "Replace original"}</button>
-            {confirmReplace && <button className="quiet-button" type="button" onClick={() => setConfirmReplace(false)}>Cancel</button>}
+            <button className="quiet-button" type="button" style={{ color: "#d33" }} onClick={() => setConfirmReplace(true)}>Replace original</button>
             <button className="primary-button" type="button" onClick={() => props.onExport(false)}>Save copy</button>
           </div>
         </aside>
@@ -2969,6 +2968,18 @@ function EditScreen(props: any) {
         </div>
       </div>
       <p className="browser-capability-warning">Browser canvas export supports JPEG, PNG, and WebP input when the browser can decode it. HEIC and RAW need native macOS image frameworks. Metadata is removed from re-encoded exports.</p>
+      {confirmReplace && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+          <div style={{ background: "var(--surface)", padding: 20, borderRadius: 8, maxWidth: 420, width: "90%" }}>
+            <h3 style={{ margin: "0 0 8px", color: "var(--text)" }}>Replace original file?</h3>
+            <p style={{ margin: "0 0 16px", color: "var(--muted)" }}>This will overwrite the original image with the edited version. This cannot be undone.</p>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button className="quiet-button" type="button" onClick={() => setConfirmReplace(false)}>Cancel</button>
+              <button className="primary-button" type="button" style={{ background: "#d33", borderColor: "#d33" }} onClick={() => { setConfirmReplace(false); props.onExport(true); }}>Replace</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

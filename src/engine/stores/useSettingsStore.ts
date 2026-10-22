@@ -1,9 +1,9 @@
 import { useSyncExternalStore } from "react";
 import { create } from "zustand";
-import { persist, createJSONStorage } from "zustand/middleware";
 import type { AppSettings } from "../types/settings";
 import { defaultSettings } from "../types/settings";
 import { tauri } from "../commands/tauri";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 /**
  * A small debounce window for settings persistence. Controls in the Settings
@@ -67,8 +67,7 @@ interface SettingsState extends AppSettings {
 }
 
 export const useSettingsStore = create<SettingsState>()(
-  persist(
-    (set, get) => ({
+  (set, get) => ({
       ...defaultSettings,
       _hydrated: false,
       _loading: false,
@@ -119,22 +118,9 @@ export const useSettingsStore = create<SettingsState>()(
           console.error("Failed to reset settings:", e);
         }
       },
-    }),
-    {
-      name: "stillroom-settings",
-      storage: createJSONStorage(() => localStorage),
-      partialize: (state) => {
-        const { _hydrated, _loading, ...settings } = state;
-        return settings;
-      },
-      onRehydrateStorage: () => (state) => {
-        if (state) {
-          state._hydrated = true;
-        }
-      },
-    }
+    })
   )
-);
+;
 
 // Selectors for common use
 export const useAppearance = () => useSettingsStore((s) => s.appearance);
@@ -191,6 +177,20 @@ export function applyTheme(settings: Pick<AppSettings, "appearance" | "accentCol
   frame.style.setProperty("--accent-soft", soft);
   frame.style.setProperty("--accent-contrast", contrastOn(base));
   frame.style.setProperty("--field-focus-inner", rgba(base, isDark ? 0.26 : 0.24));
+  // Expose --surface on <html> so <body> (an ancestor of .app-frame) inherits
+  // the correct dark/light surface color. This prevents the parent-window
+  // background from flashing during live window resizes when .app-frame
+  // hasn't yet resized to fill the viewport.
+  document.documentElement.style.setProperty("--surface", surface);
+
+  // Sync the native window background color to match the surface so that any
+  // gap between the webview backing store and the native window edge during
+  // macOS live resize shows the correct color instead of a white/light stripe.
+  try {
+    void getCurrentWindow().setBackgroundColor(surface);
+  } catch {
+    // Tauri not available (web preview) or API call failed — ignore.
+  }
 }
 
 // The accent palette. Each accent has a light-mode and a dark-mode value so

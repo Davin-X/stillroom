@@ -809,6 +809,34 @@ function App() {
     };
   }, [screen, library.activeAlbum]);
 
+  // Force WebKit to relayout during macOS live window drags. The vh unit and
+  // backing store don't update continuously while dragging a window edge,
+  // exposing the native window background. Reading offsetHeight in a rAF loop
+  // whenever the inner size changes triggers a layout pass so .app-frame
+  // (position: fixed; inset: 0) tracks the real viewport edges.
+  useEffect(() => {
+    let raf: ReturnType<typeof requestAnimationFrame> | null = null;
+    let prevW = window.innerWidth;
+    let prevH = window.innerHeight;
+
+    const loop = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      if (w !== prevW || h !== prevH) {
+        prevW = w;
+        prevH = h;
+        // Force a synchronous layout read so WebKit recalculates the viewport.
+        void document.documentElement.offsetHeight;
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
+
   const openAlbumMenu = (album: any, e: React.MouseEvent) => {
     openContextMenu(
       [

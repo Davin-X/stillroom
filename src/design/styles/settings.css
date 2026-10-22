@@ -2,7 +2,7 @@
 
 .settings-page {
   width: 100%;
-  max-width: 880px;
+  max-width: 1080px;
   margin: 0 auto;
   padding: 32px 40px 48px;
   display: flex;
@@ -11,6 +11,12 @@
   min-height: 0;
   /* The panel below is the single scroll owner. */
   overflow: hidden;
+  box-sizing: border-box;
+  /* Always paint the theme surface so the parent window background never
+     bleeds through when scrolling on smaller windows. */
+  background: var(--surface);
+  /* Match the page width of other screens (.feature-page, .viewer-screen,
+     etc. at max-width: 1080px) so pages align when switching tabs. */
 }
 
 .settings-page .settings-tabs {
@@ -28,6 +34,76 @@
   scrollbar-width: thin;
   scrollbar-color: var(--line-strong) transparent;
   flex-shrink: 0;
+  /* Subtle fade-out on the right edge when tabs overflow and can scroll. */
+  mask-image: linear-gradient(
+    to right,
+    black 0%,
+    black 88%,
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to right,
+    black 0%,
+    black 88%,
+    transparent 100%
+  );
+}
+
+@media (min-width: 961px) {
+  .settings-tabs {
+    mask-image: none;
+    -webkit-mask-image: none;
+  }
+}
+
+/* ===== PAGE HEADING ===== */
+.settings-page > .page-heading {
+  margin-bottom: 30px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  text-align: left;
+}
+
+.settings-page > .page-heading .eyebrow {
+  margin: 0 0 8px;
+  color: var(--faint);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.settings-page > .page-heading h1 {
+  margin: 0 0 6px;
+  color: var(--ink);
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+}
+
+.settings-page > .page-heading .page-subtitle {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* Medium windows: tighten padding so the centered page doesn't look lost
+   between the narrow (≤960px) and wide (>1200px) layouts. */
+@media (max-width: 1200px) {
+  .settings-page {
+    padding: 24px 32px 36px;
+  }
+
+  .settings-page > .page-heading {
+    margin-bottom: 24px;
+  }
+
+  .settings-page > .page-heading h1 {
+    font-size: 24px;
+  }
 }
 
 .settings-tabs::-webkit-scrollbar {
@@ -44,7 +120,7 @@
 }
 
 .settings-tab {
-  flex: 1 1 0%;
+  flex: 0 0 auto;
   min-width: 100px;
   max-width: 200px;
   padding: 10px 16px;
@@ -102,6 +178,7 @@
   animation: fadeInUp 0.15s ease;
   flex: 1;
   min-height: 0;
+  width: 100%;
   overflow-y: auto;
   overflow-x: hidden;
   /* No right padding: the old 8px gutter pushed every row out of alignment
@@ -132,39 +209,41 @@
 }
 
 .settings-section {
-  margin-bottom: 32px;
+  margin-bottom: 34px;
 }
 
 .settings-section + .settings-section {
-  padding-top: 4px;
+  padding-top: 2px;
 }
 
 .settings-section-title {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   color: var(--ink);
-  font-size: 15px;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-  margin-bottom: 12px;
-  padding-bottom: 8px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  margin-bottom: 16px;
+  padding-bottom: 10px;
   border-bottom: 1px solid var(--line);
 }
 
 .settings-section-title svg {
   color: var(--muted);
   flex-shrink: 0;
+  width: 16px;
+  height: 16px;
 }
 
 .settings-row {
   display: grid;
-  grid-template-columns: minmax(0, 240px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 250px) minmax(0, 1fr);
   align-items: center;
-  gap: 16px;
-  padding: 12px 8px;
-  border-radius: 8px;
-  transition: background-color 0.12s ease;
+  gap: 20px;
+  padding: 14px 10px;
+  border-radius: 10px;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .settings-row:not(:last-child) {
@@ -173,13 +252,31 @@
 
 /* Keyboard users need to see which row they are on; mouse users get the same
    cue. */
-.settings-row:hover,
-.settings-row:focus-within {
+.settings-row:hover {
   background: var(--surface-2);
 }
 
 .settings-row:focus-within {
+  background: var(--surface-2);
   box-shadow: inset 0 0 0 1px var(--field-line);
+}
+
+.settings-row-label {
+  display: grid;
+  gap: 4px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.settings-row-label b {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.settings-row-desc {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .settings-row-label {
@@ -203,6 +300,7 @@
 .settings-row-control {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 10px;
   flex-wrap: wrap;
 }
@@ -220,14 +318,14 @@
 /* Radio Group */
 .radio-group {
   display: flex;
-  gap: 16px;
+  gap: 18px;
   flex-wrap: wrap;
 }
 
 .radio-option {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   cursor: pointer;
   padding: 4px 0;
 }
@@ -240,28 +338,33 @@
 }
 
 .radio-dot {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border: 2px solid var(--line-strong);
   border-radius: 50%;
   display: grid;
   place-items: center;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
   flex-shrink: 0;
 }
 
 .radio-dot::after {
   content: "";
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
-  background: var(--blue);
+  background: var(--accent, var(--blue));
   transform: scale(0);
-  transition: transform 0.15s ease;
+  transition: transform 0.18s cubic-bezier(0.2, 1, 0.3, 1);
 }
 
 .radio-option input:checked + .radio-dot {
-  border-color: var(--blue);
+  border-color: var(--accent, var(--blue));
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
+}
+
+.app-frame.dark .radio-option input:checked + .radio-dot {
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.25);
 }
 
 .radio-option input:checked + .radio-dot::after {
@@ -269,13 +372,22 @@
 }
 
 .radio-option input:focus-visible + .radio-dot {
-  outline: 2px solid var(--blue);
-  outline-offset: 2px;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.35);
+}
+
+.radio-option:hover .radio-dot {
+  border-color: var(--text);
 }
 
 .radio-label {
   color: var(--text);
   font-size: 13px;
+  font-weight: 500;
+}
+
+.radio-option:hover .radio-label {
+  color: var(--ink);
 }
 
 /* Accent Color Picker */
@@ -347,8 +459,9 @@
 
 /* Slider */
 .settings-slider {
-  width: 100%;
-  max-width: 280px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 200px;
   height: 20px;
   margin: 0;
   appearance: none;
@@ -358,21 +471,26 @@
 }
 
 .settings-slider::-webkit-slider-runnable-track {
-  height: 6px;
-  border: 1px solid var(--field-line);
+  height: 5px;
+  border: none;
   border-radius: 999px;
   background: var(--field-inner-strong);
 }
 
 .settings-slider::-webkit-slider-thumb {
   appearance: none;
-  width: 16px;
-  height: 16px;
-  margin-top: -6px;
+  width: 18px;
+  height: 18px;
+  margin-top: -7px;
   border: 1px solid var(--field-line);
   border-radius: 50%;
   background: var(--accent, var(--blue));
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s ease;
+}
+
+.settings-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
 }
 
 .settings-slider:focus-visible {
@@ -394,11 +512,12 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Toggle Switch */
+/* Toggle Switch — macOS style */
 .toggle-switch {
   position: relative;
-  width: 48px;
-  height: 28px;
+  display: inline-block;
+  width: 52px;
+  height: 30px;
   flex-shrink: 0;
 }
 
@@ -407,62 +526,100 @@
   opacity: 0;
   width: 0;
   height: 0;
+  margin: 0;
 }
 
 .toggle-track {
+  display: block;
   width: 100%;
   height: 100%;
-  border-radius: 14px;
-  background: var(--line-strong);
-  transition: background 0.15s ease;
+  border-radius: 15px;
+  background: var(--surface-3);
+  transition: background 0.2s ease, box-shadow 0.2s ease;
   position: relative;
+  border: 1px solid var(--field-line);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+}
+
+.app-frame.dark .toggle-track {
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 .toggle-track::after {
   content: "";
   position: absolute;
   top: 2px;
-  left: 2px;
-  width: 24px;
-  height: 24px;
+  left: 1px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
-  background: white;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-  transition: transform 0.15s ease;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22), 0 1px 0 rgba(0, 0, 0, 0.08);
+  transition: transform 0.22s cubic-bezier(0.3, 1, 0.7, 1);
 }
 
 .toggle-switch input:checked + .toggle-track {
-  background: var(--blue);
+  background: var(--accent, var(--blue));
+  border-color: transparent;
 }
 
 .toggle-switch input:checked + .toggle-track::after {
-  transform: translateX(20px);
+  transform: translateX(24px);
+}
+
+.toggle-switch input:disabled + .toggle-track {
+  background: var(--surface-3);
+  border-color: rgba(0, 0, 0, 0.06);
+  cursor: not-allowed;
+}
+
+.toggle-switch input:disabled + .toggle-track::after {
+  background: #e9edf1;
+  box-shadow: none;
+}
+
+.app-frame.dark .toggle-switch input:disabled + .toggle-track::after {
+  background: #42474e;
 }
 
 .toggle-switch input:focus-visible + .toggle-track {
-  outline: 2px solid var(--blue);
-  outline-offset: 2px;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.35);
+}
+
+.toggle-switch {
+  cursor: pointer;
+}
+
+/* Toggle rows get slightly more vertical breathing room */
+.settings-row:has(.toggle-switch) {
+  padding-top: 14px;
+  padding-bottom: 14px;
 }
 
 /* Select */
 .settings-select {
-  min-width: 160px;
-  max-width: 280px;
-  height: 36px;
-  padding: 0 12px;
+  min-width: 170px;
+  max-width: 340px;
+  height: 40px;
+  padding: 0 14px;
   border: 1px solid var(--field-line);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--surface);
-  color: var(--text);
+  color: var(--ink);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 550;
   cursor: pointer;
   appearance: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2366717c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: right 10px center;
+  background-position: right 12px center;
   background-size: 16px;
-  padding-right: 36px;
+  padding-right: 40px;
 }
 
 .settings-select:hover {
@@ -470,21 +627,24 @@
 }
 
 .settings-select:focus-visible {
-  outline: 2px solid var(--blue);
-  outline-offset: 2px;
+  outline: none;
+  border-color: var(--accent, var(--blue));
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
 }
 
 /* Input */
 .settings-input {
-  min-width: 200px;
-  max-width: 320px;
-  height: 36px;
-  padding: 0 12px;
+  min-width: 210px;
+  max-width: 340px;
+  height: 40px;
+  padding: 0 14px;
   border: 1px solid var(--field-line);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--surface);
   color: var(--ink);
   font-size: 13px;
+  font-weight: 500;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .settings-input:hover {
@@ -492,9 +652,9 @@
 }
 
 .settings-input:focus-visible {
-  outline: 2px solid var(--blue);
-  outline-offset: 2px;
-  border-color: var(--blue);
+  outline: none;
+  border-color: var(--accent, var(--blue));
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
 }
 
 .settings-input::placeholder {
@@ -505,7 +665,8 @@
 .settings-divider {
   height: 1px;
   background: var(--line);
-  margin: 20px 0;
+  margin: 24px 0;
+  border: none;
 }
 
 /* Warning Box */
@@ -520,7 +681,7 @@
   color: var(--muted);
   font-size: 13px;
   line-height: 1.6;
-  margin-top: 16px;
+  margin-top: 20px;
 }
 
 .settings-warning-icon {
@@ -532,10 +693,11 @@
 
 /* Danger Zone - destructive rows must not look like ordinary preferences. */
 .settings-danger-zone {
-  padding: 14px 16px;
+  padding: 16px 18px;
   border: 1px solid var(--danger-line, var(--line-strong));
   border-radius: 10px;
   background: var(--danger-tint, var(--surface-2));
+  margin-top: 4px;
 }
 
 .settings-danger-zone .settings-section-title {
@@ -958,9 +1120,64 @@
 
 /* ===== Responsive ===== */
 
+/* Tablet / medium windows: reduce padding, let controls breathe without
+   fixed max-widths that overflow narrow containers. */
+@media (max-width: 1024px) {
+  .settings-page {
+    padding: 24px 24px 36px;
+    max-width: 100%;
+  }
+
+  .settings-tabs {
+    margin-bottom: 24px;
+  }
+
+  .settings-tab {
+    min-width: 90px;
+    padding: 9px 12px;
+    font-size: 12px;
+  }
+
+  .settings-row {
+    grid-template-columns: minmax(0, 180px) minmax(0, 1fr);
+    gap: 12px;
+    padding: 10px 6px;
+  }
+
+  .settings-slider {
+    max-width: 200px;
+    width: auto;
+  }
+
+  .settings-select {
+    max-width: 200px;
+    width: auto;
+  }
+
+  .settings-input {
+    max-width: 200px;
+    width: auto;
+  }
+
+  .accent-picker {
+    gap: 8px;
+  }
+
+  .accent-swatch {
+    width: 28px;
+    height: 28px;
+  }
+
+  .settings-warning {
+    padding: 14px 16px;
+    font-size: 12px;
+  }
+}
+
+/* Small windows: stack everything, hide tab icons, compact controls. */
 @media (max-width: 960px) {
   .settings-page {
-    padding: 24px 20px 32px;
+    padding: 20px 16px 28px;
     max-width: 100%;
   }
 
@@ -1004,13 +1221,13 @@
   }
 
   .settings-slider {
-    max-width: none;
-    width: 100%;
+    max-width: 180px;
+    width: auto;
   }
 
   .settings-select {
-    max-width: none;
-    width: 100%;
+    max-width: 180px;
+    width: auto;
   }
 
   .radio-group {
@@ -1051,6 +1268,7 @@
   }
 }
 
+/* Extra-small windows: maximum compactness. */
 @media (max-width: 640px) {
   .settings-page {
     padding: 16px 12px 24px;

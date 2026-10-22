@@ -176,6 +176,7 @@ pub fn run() {
             compute_hash,
             // Vault
             vault_unlock,
+            vault_set_password,
             vault_lock,
             vault_add_items,
             vault_remove_items,

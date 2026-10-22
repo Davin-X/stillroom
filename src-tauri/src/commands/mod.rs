@@ -8,6 +8,7 @@ use uuid::Uuid;
 use time::OffsetDateTime;
 use sqlx::{SqlitePool, Sqlite, QueryBuilder, Row};
 use std::collections::HashMap;
+use sha2::{Sha256, Digest};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
@@ -1173,9 +1174,39 @@ pub async fn compute_hash(path: String, state: State<'_, AppState>) -> Result<St
 }
 
 #[tauri::command]
-pub async fn vault_unlock(biometric: bool, state: State<'_, AppState>) -> Result<VaultSession, String> {
-    let _ = state;
+pub async fn vault_unlock(password: Option<String>, biometric: bool, state: State<'_, AppState>) -> Result<VaultSession, String> {
+    let db = get_db(&state)?;
+    // Read stored password hash
+    let stored: Option<String> = sqlx::query_scalar("SELECT value FROM settings WHERE key = 'vault_password_hash'")
+        .fetch_optional(&db)
+        .await
+        .map_err(|e| e.to_string())?;
+    if let Some(hash) = stored {
+        if !biometric {
+            let provided = password.unwrap_or_default();
+            let mut hasher = Sha256::new();
+            hasher.update(provided.as_bytes());
+            let result = format!("{:x}", hasher.finalize());
+            if result != hash {
+                return Err("Incorrect password".to_string());
+            }
+        }
+    }
     Ok(VaultSession { unlocked: true, expires_at: Some(now_ms() + 5 * 60 * 1000), method: if biometric { "touchid" } else { "password" }.to_string() })
+}
+
+#[tauri::command]
+pub async fn vault_set_password(password: String, state: State<'_, AppState>) -> Result<(), String> {
+    let db = get_db(&state)?;
+    let mut hasher = Sha256::new();
+    hasher.update(password.as_bytes());
+    let hash = format!("{:x}", hasher.finalize());
+    sqlx::query("INSERT INTO settings (key, value) VALUES ('vault_password_hash', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+        .bind(hash)
+        .execute(&db)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]

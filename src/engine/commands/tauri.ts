@@ -123,8 +123,11 @@ export const tauri = {
   },
 
   vault: {
-    unlock: (biometric: boolean): Promise<VaultSession> =>
-      invoke("vault_unlock", { biometric }),
+    setPassword: (password: string): Promise<void> =>
+      invoke("vault_set_password", { password }),
+
+    unlock: (password: string | null, biometric: boolean): Promise<VaultSession> =>
+      invoke("vault_unlock", { password, biometric }),
 
     lock: (): Promise<void> =>
       invoke("vault_lock"),

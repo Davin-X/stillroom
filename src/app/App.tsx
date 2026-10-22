@@ -3188,7 +3188,7 @@ function VaultScreen(props: any) {
           <p>
             Items in the vault are encrypted and hidden from the main library. Unlock with Touch ID or password.
           </p>
-          <button className="primary-button" type="button" onClick={() => props.onUnlock(true)}>
+          <button className="primary-button" type="button" onClick={() => props.onUnlock(undefined, true)}>
             Unlock with Touch ID
           </button>
           <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap", marginTop: 14 }}>
@@ -3198,7 +3198,7 @@ function VaultScreen(props: any) {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Password"
             />
-            <button className="quiet-button" type="button" onClick={() => { props.onUnlock(false); setPassword(""); }}>
+            <button className="quiet-button" type="button" onClick={() => { props.onUnlock(password, false); setPassword(""); }}>
               Unlock
             </button>
           </div>

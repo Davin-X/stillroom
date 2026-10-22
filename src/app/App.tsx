@@ -3168,6 +3168,7 @@ function BatchScreen(props: any) {
 
 function VaultScreen(props: any) {
   const [password, setPassword] = React.useState("");
+  const [error, setError] = React.useState("");
   if (!props.unlocked) {
     return (
       <div className="vault-page">
@@ -3190,7 +3191,7 @@ function VaultScreen(props: any) {
           <p>
             Items in the vault are encrypted and hidden from the main library. Unlock with Touch ID or password.
           </p>
-          <button className="primary-button" type="button" onClick={() => props.onUnlock(undefined, true)}>
+          <button className="primary-button" type="button" onClick={() => { props.onUnlock(undefined, true).catch((e: any) => setError(String(e))); }}>
             Unlock with Touch ID
           </button>
           <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap", marginTop: 14 }}>
@@ -3200,16 +3201,17 @@ function VaultScreen(props: any) {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Password"
             />
-            <button className="quiet-button" type="button" onClick={() => { props.onUnlock(password, false); setPassword(""); }}>
+            <button className="quiet-button" type="button" onClick={async () => { try { await props.onUnlock(password, false); setPassword(""); setError(""); } catch (e: any) { setError(String(e)); } }}>
               Unlock
             </button>
-            <button className="quiet-button" type="button" onClick={() => { props.onSetPassword?.(password); setPassword(""); }}>
+            <button className="quiet-button" type="button" onClick={async () => { try { await props.onSetPassword?.(password); setPassword(""); setError("Password set"); } catch (e: any) { setError(String(e)); } }}>
               Set password
             </button>
-            <button className="quiet-button" type="button" onClick={() => { props.onClearPassword?.(); setPassword(""); }}>
+            <button className="quiet-button" type="button" onClick={async () => { try { await props.onClearPassword?.(); setError("Password cleared"); } catch (e: any) { setError(String(e)); } }}>
               Reset
             </button>
           </div>
+          {error && <small style={{ color: "var(--danger, #c00)" }}>{error}</small>}
           <small>Or use password</small>
         </div>
       </div>

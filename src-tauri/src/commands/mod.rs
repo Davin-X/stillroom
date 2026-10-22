@@ -1199,6 +1199,9 @@ pub async fn vault_unlock(password: Option<String>, biometric: bool, state: Stat
 
 #[tauri::command]
 pub async fn vault_set_password(password: String, state: State<'_, AppState>) -> Result<(), String> {
+    if password.trim().is_empty() {
+        return Err("Password cannot be empty".to_string());
+    }
     let db = get_db(&state)?;
     let mut hasher = Sha256::new();
     hasher.update(password.as_bytes());

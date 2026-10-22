@@ -3167,7 +3167,7 @@ function VaultScreen(props: any) {
   const [password, setPassword] = React.useState("");
   if (!props.unlocked) {
     return (
-      <div className="vault-page" style={{ display: "block" }}>
+      <div className="feature-page" style={{ display: "block" }}>
         <div style={{ maxWidth: 520, margin: "40px auto", padding: 40, border: "1px solid var(--line)", borderRadius: 16, background: "radial-gradient(ellipse at 50% 0%, rgba(142,132,225,.16), transparent 60%), var(--surface-2)", textAlign: "center" }}>
           <div style={{ display: "grid", placeItems: "center", width: 72, height: 72, margin: "0 auto 20px", borderRadius: 20, border: "1px solid rgba(143,132,228,.3)", background: "linear-gradient(145deg, rgba(137,174,246,.18), rgba(191,145,220,.2))", color: "#8d86d4" }}>
             <VaultIcon size={28} />
@@ -3199,7 +3199,7 @@ function VaultScreen(props: any) {
     );
   }
   return (
-    <div className="vault-page" style={{ display: "block" }}>
+    <div className="feature-page" style={{ display: "block" }}>
       <div style={{ width: "100%", display: "grid", gap: 20 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
           <div>

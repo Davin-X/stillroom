@@ -14,7 +14,7 @@ interface VaultState {
 
   // Actions
   loadStatus: () => Promise<void>;
-  unlock: (password?: string, biometric?: boolean) => Promise<void>;
+  unlock: (biometric?: boolean) => Promise<void>;
   lock: () => Promise<void>;
   addItems: (itemIds: string[]) => Promise<void>;
   removeItems: (itemIds: string[]) => Promise<void>;
@@ -46,9 +46,9 @@ export const useVaultStore = create<VaultState>()(
         }
       },
 
-      unlock: async (password, biometric = false) => {
+      unlock: async (biometric = false) => {
         try {
-          const session = await tauri.vault.unlock(password ?? null, biometric);
+          const session = await tauri.vault.unlock(biometric);
           const items = await tauri.vault.listItems();
           set({ unlocked: session.unlocked, locked: !session.unlocked, items });
         } catch (e) {

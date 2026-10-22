@@ -2939,10 +2939,10 @@ function EditScreen(props: any) {
         </aside>
       </div>
       <div className="drafts-row">
-        <h3>Drafts</h3>
-        <div className="edit-picker-grid compact">
+        <h3 style={{ color: "var(--text)" }}>Drafts</h3>
+        <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8 }}>
           {(props.items||[]).filter((it:any) => { try { return !!localStorage.getItem(`edit:draft:${it.id}`); } catch { return false; } }).map((item:any) => (
-            <button key={item.id} type="button" className="edit-picker-tile" onClick={() => { props.onSaveDraft?.(); props.onOpenEdit?.(item); }}>
+            <button key={item.id} type="button" className="edit-picker-tile" style={{ minWidth: 120, width: 120 }} onClick={() => { props.onSaveDraft?.(); props.onOpenEdit?.(item); }}>
               <img src={props.assetUrl(item.path)} alt={item.name} />
               <span>{item.name}</span>
             </button>

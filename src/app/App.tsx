@@ -1185,6 +1185,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             query={library.query}
             layout={library.layout}
             showInspector={library.showInspector}
+            showHidden={vault.unlocked}
             activeAlbum={library.activeAlbum}
             albums={library.albums}
             onInspectItem={library.inspectItem}
@@ -2356,7 +2357,7 @@ function LibraryScreen(props: any) {
               </div>
               <div className="filter-cluster">
                 <span className="smart-label">SHOW</span>
-                {[...(["All", "Photos", "Videos", "RAW", "Favorites"] as string[]), ...(vault.unlocked ? ["Hidden"] : [])].map((f) => {
+                {[...(["All", "Photos", "Videos", "RAW", "Favorites"] as string[]), ...(props.showHidden ? ["Hidden"] : [])].map((f) => {
                   const count = filterCounts[f as keyof typeof filterCounts] ?? 0;
                   return (
                     <button key={f} type="button" className={`quick-filter ${props.filter === f ? "active" : ""}`} onClick={() => props.onChangeFilter(f)}>

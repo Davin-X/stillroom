@@ -1279,11 +1279,13 @@ handlersRef.current = { importFolder, importFiles, showNotice };
                 a.click();
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
+                try { localStorage.removeItem(`edit:draft:${item.id}`); } catch {}
                 showNotice("Exported edited copy");
               } catch (e) {
                 showNotice("Export failed");
               }
             }}
+            onClearDraft={edit.clearDraft}
             assetUrl={assetUrl}
             items={library.items.filter((i: any) => i.kind === "photo")}
             onOpenEdit={(item: any) => { edit.open(item); }}
@@ -2839,6 +2841,7 @@ function EditScreen(props: any) {
           ))}
           <div className="edit-footer">
             <button className="quiet-button" type="button" onClick={props.onReset}>Reset</button>
+            <button className="quiet-button" type="button" onClick={props.onClearDraft}>Discard draft</button>
             <button className="primary-button" type="button" onClick={props.onExport}>Export edited copy</button>
           </div>
         </aside>

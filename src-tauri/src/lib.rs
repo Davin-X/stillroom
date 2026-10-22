@@ -151,6 +151,7 @@ pub fn run() {
             unwatch_folder,
             get_library_folders,
             remove_library_folder,
+            delete_library_database,
             // Items
             toggle_favorite,
             toggle_hidden,

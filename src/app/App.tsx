@@ -3,7 +3,17 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { currentMonitor, getCurrentWindow, LogicalSize, PhysicalPosition } from "@tauri-apps/api/window";
 import { tauri, events } from "../engine/commands/tauri";
-import { useLibraryStore, useViewerStore, useEditStore, useVaultStore, useSlideshowStore, useBatchStore, useSettingsStore } from "../engine/stores";
+import {
+  useLibraryStore,
+  useViewerStore,
+  useEditStore,
+  useVaultStore,
+  useSlideshowStore,
+  useBatchStore,
+  useSettingsStore,
+  useSystemDark,
+  applyTheme,
+} from "../engine/stores";
 import { getTypeIdentity, getKindIcon } from "../engine/utils/mediaTypes";
 
 // Helper: render a kind badge using centralized type identity
@@ -67,12 +77,15 @@ function searchShortcutLabel(): string {
 
 function App() {
   const [screen, setScreen] = useState<Screen>("Library");
-  const [dark, setDark] = useState(() =>
-    typeof window !== "undefined" && window.matchMedia
-      ? window.matchMedia("(prefers-color-scheme: dark)").matches
-      : false
-  );
+  // Context menu state (declared here because the component references it in
+  // JSX but it was previously an implicit global, which left the render blank).
   const [contextMenu, setContextMenu] = useState<{ items: any[]; x: number; y: number } | null>(null);
+  const systemDark = useSystemDark();
+  const appearance = useSettingsStore((s) => s.appearance);
+  const accentColor = useSettingsStore((s) => s.accentColor);
+  const sidebarWidth = useSettingsStore((s) => s.sidebarWidth);
+  // Resolved appearance: the user's choice, or the OS setting when "system".
+  const dark = appearance === "dark" || (appearance === "system" && systemDark);
   const [albumDialogOpen, setAlbumDialogOpen] = useState(false);
   const [albumDialogMode, setAlbumDialogMode] = useState<"create" | "rename">("create");
   const [albumName, setAlbumName] = useState("");
@@ -468,21 +481,24 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Follow the operating system appearance; the in-app toggle can override it.
+  // Pull the authoritative settings from SQLite once at startup so the app
+  // chrome (appearance, accent, sidebar width) is correct even if the user
+  // never opens Settings.
+  const hydrateSettings = useSettingsStore((s) => s.hydrate);
   useEffect(() => {
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const onChange = (e: MediaQueryListEvent) => setDark(e.matches);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
+    void hydrateSettings();
+  }, [hydrateSettings]);
 
-  // Keep the native window chrome (traffic lights / window background) in sync
-  // with the in-app appearance, so the title bar never looks "always light".
+  // Keep the in-app theme and the native window chrome (traffic lights /
+  // window background) in sync with the resolved appearance. This lives here
+  // (always mounted) rather than in Settings so closing Settings never leaves
+  // the app frame on a stale theme.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         if (cancelled) return;
+        applyTheme({ appearance, accentColor });
         await getCurrentWindow().setTheme(dark ? "dark" : "light");
       } catch {
         /* browser preview - no native window */
@@ -491,7 +507,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [dark]);
+  }, [dark, appearance, accentColor, systemDark]);
 
   const showNotice = useCallback((text: string) => {
     library.showNotice(text);
@@ -793,6 +809,34 @@ function App() {
     };
   }, [screen, library.activeAlbum]);
 
+  // Force WebKit to relayout during macOS live window drags. The vh unit and
+  // backing store don't update continuously while dragging a window edge,
+  // exposing the native window background. Reading offsetHeight in a rAF loop
+  // whenever the inner size changes triggers a layout pass so .app-frame
+  // (position: fixed; inset: 0) tracks the real viewport edges.
+  useEffect(() => {
+    let raf: ReturnType<typeof requestAnimationFrame> | null = null;
+    let prevW = window.innerWidth;
+    let prevH = window.innerHeight;
+
+    const loop = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      if (w !== prevW || h !== prevH) {
+        prevW = w;
+        prevH = h;
+        // Force a synchronous layout read so WebKit recalculates the viewport.
+        void document.documentElement.offsetHeight;
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
+
   const openAlbumMenu = (album: any, e: React.MouseEvent) => {
     openContextMenu(
       [
@@ -928,7 +972,10 @@ const importFolder = async () => {
 handlersRef.current = { importFolder, importFiles, showNotice };
 
   return (
-    <div className={`app-frame ${dark ? "dark" : ""}`}>
+    <div
+      className={`app-frame ${dark ? "dark" : ""}`}
+      style={{ "--sidebar-width": `${sidebarWidth}px` } as React.CSSProperties}
+    >
       <header className="topbar" onMouseDown={beginTopbarDrag} onDoubleClick={handleTopbarDoubleClick}>
         <div className="topbar-brand"><BrandMark size={26} /><b>Stillroom</b></div>
         <div className="topbar-context">
@@ -973,7 +1020,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             type="button"
             aria-label={dark ? "Switch to light appearance" : "Switch to dark appearance"}
             title={dark ? "Switch to light appearance" : "Switch to dark appearance"}
-            onClick={() => setDark(!dark)}
+            onClick={() => settings.update("appearance", dark ? "light" : "dark")}
           >
             {dark ? <SunIcon size={18} /> : <MoonIcon size={18} />}
           </button>

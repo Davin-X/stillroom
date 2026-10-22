@@ -18,8 +18,8 @@
   --i-dur: 0.15s;
   --i-ease: cubic-bezier(0.4, 0, 0.2, 1);
   --i-tint: var(--surface-3);
-  --i-ring: rgba(77, 142, 247, 0.18);
-  --blue-hover: #2d6bd0;
+  --i-ring: var(--field-focus-inner, rgba(77, 142, 247, 0.18));
+  --blue-hover: var(--accent-hover);
   --danger: #c2574f;
   --danger-tint: rgba(194, 87, 79, 0.1);
   --danger-line: #e6a4a1;
@@ -27,8 +27,8 @@
 
 .app-frame.dark {
   --i-tint: #2b3138;
-  --i-ring: rgba(138, 180, 255, 0.24);
-  --blue-hover: #a6c4ff;
+  --i-ring: var(--field-focus-inner, rgba(138, 180, 255, 0.24));
+  --blue-hover: var(--accent-hover);
   --danger: #f0918a;
   --danger-tint: rgba(240, 145, 138, 0.14);
   --danger-line: rgba(240, 145, 138, 0.45);
@@ -68,7 +68,7 @@
   .filmstrip-preview button
 ):hover:not(:disabled) {
   border-color: var(--blue);
-  color: var(--blue);
+  color: var(--accent-text);
   background-color: var(--surface-2);
 }
 
@@ -79,8 +79,14 @@
 }
 
 .app-frame .danger-button {
-  border-color: var(--danger-line);
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--danger-line);
+  border-radius: 6px;
+  background: transparent;
   color: var(--danger);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .app-frame .danger-button:hover:not(:disabled) {
@@ -108,14 +114,14 @@
 /* Segmented control: the hovered segment lifts out of the track. */
 .app-frame .layout-switcher button:not(.selected):hover:not(:disabled) {
   background: var(--surface);
-  color: var(--blue);
+  color: var(--accent-text);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
 /* Inline "view all" style links read as links on hover. */
 .app-frame :is(.date-group-heading > button, .inspector-section-head button, .finder-tags button):hover:not(:disabled) {
   background: transparent;
-  color: var(--blue);
+  color: var(--accent-text);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -135,7 +141,7 @@
 .app-frame .context-menu-item:not(.danger):hover,
 .app-frame .context-menu-item:not(.danger):focus-visible {
   background: var(--blue-soft);
-  color: var(--blue);
+  color: var(--accent-text);
 }
 
 .app-frame .context-menu-item.danger:hover,
@@ -181,7 +187,7 @@
 }
 
 .app-frame .toggle-switch input:checked:active + .toggle-track::after {
-  transform: translateX(20px) scale(0.92);
+  transform: translateX(18px) scale(0.92);
 }
 
 .app-frame .radio-option:hover .radio-dot {
@@ -263,7 +269,7 @@
 }
 
 .app-frame a {
-  color: var(--blue);
+  color: var(--accent-text);
   text-decoration-color: transparent;
   text-underline-offset: 2px;
 }

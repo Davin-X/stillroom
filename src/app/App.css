@@ -1,13 +1,16 @@
-/* Native app mode - fill the window completely */
+/* Native app mode - fill the window completely.
+   Use 100% (not 100vh) so the chain html→body→#root resizes continuously
+   during macOS live window drags instead of relying on stale vh units. */
 html, body, #root {
   width: 100%;
   height: 100%;
   margin: 0;
   padding: 0;
-  /* overflow: hidden; */
 }
 
 .app-frame {
+  position: fixed;
+  inset: 0;
   width: 100% !important;
   height: 100% !important;
   min-height: 100% !important;
@@ -29,7 +32,7 @@ html, body, #root {
 body {
   padding: 0 !important;
   margin: 0 !important;
-  background: var(--surface, #fff);
+  background: var(--surface);
 }
 
 /* Type floor: bare <small> uses the UA "smaller" size; keep it legible. */
@@ -71,7 +74,7 @@ body {
 
 .app-body {
   display: grid;
-  grid-template-columns: minmax(200px, 220px) minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width, 220px) minmax(0, 1fr);
   flex: 1;
   min-height: 0;
   min-width: 0;
@@ -189,12 +192,18 @@ body {
   display: flex;
   flex-direction: column;
   height: 100%;
-  min-height: 100%;
+  min-height: 0;
   border-right: 1px solid var(--line);
   background: var(--sidebar);
   /* Children own their own spacing (header owns the 20px top baseline),
      so the container adds none - otherwise global.css's 25px stacks up. */
   padding: 0;
+  /* The nav + sources + library stats can be taller than a short window.
+     Scroll the sidebar itself instead of letting it push the app shell past
+     the window (which used to hide the topbar and leave a blank band). */
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
 }
 
 .sidebar-header {
@@ -550,7 +559,7 @@ body {
 
 .library-header .toolbar-actions .layout-switcher button.selected {
   background: var(--blue-soft);
-  color: var(--blue);
+  color: var(--accent-text);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--blue) 24%, transparent);
 }
 
@@ -606,7 +615,7 @@ body {
 
 .library-header .quick-filter.active {
   background: var(--blue-soft);
-  color: var(--blue);
+  color: var(--accent-text);
   font-weight: 600;
 }
 
@@ -618,7 +627,7 @@ body {
 }
 
 .library-header .quick-filter.active .filter-count {
-  color: var(--blue);
+  color: var(--accent-text);
 }
 
 /* Selection cluster — Select all button */
@@ -653,7 +662,7 @@ body {
 
 .selection-cluster .quick-filter.active {
   background: var(--blue-soft);
-  color: var(--blue);
+  color: var(--accent-text);
   border-color: transparent;
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--blue) 24%, transparent);
 }
@@ -698,7 +707,7 @@ body {
 .smart-filter-row .filter-cluster .quick-filter.active {
   border-color: var(--blue);
   background: var(--blue-soft);
-  color: var(--blue);
+  color: var(--accent-text);
 }
 
 .filter-count {
@@ -1308,7 +1317,7 @@ body {
   padding: 2px 6px;
   border-radius: 4px;
   background: var(--blue);
-  color: white;
+  color: var(--accent-contrast);
   font-size: 10px;
   font-weight: 600;
 }
@@ -1556,7 +1565,7 @@ body {
 .inspector-action.active {
   background: var(--blue-soft);
   border-color: var(--blue);
-  color: var(--blue);
+  color: var(--accent-text);
 }
 
 .inspector-action:disabled {
@@ -1575,7 +1584,7 @@ body {
   margin-top: 4px;
   font-size: 11px;
   font-weight: 600;
-  color: var(--blue);
+  color: var(--accent-text);
 }
 
 
@@ -1672,7 +1681,7 @@ body {
   font-weight: 500;
   text-transform: capitalize;
 }
-.kind-badge.photo { background: var(--blue-soft); color: var(--blue); }
+.kind-badge.photo { background: var(--blue-soft); color: var(--accent-text); }
 .kind-badge.video { background: var(--green-soft); color: var(--green); }
 .kind-badge.raw { background: var(--orange-soft); color: var(--orange); }
 
@@ -1858,7 +1867,7 @@ body {
 }
 
 .search-field:focus-within .search-icon {
-  color: var(--blue);
+  color: var(--accent-text);
 }
 
 .search-field .clear-btn {
@@ -1971,7 +1980,7 @@ body {
 
 .layout-switcher button.selected {
   background: var(--surface);
-  color: var(--blue);
+  color: var(--accent-text);
   box-shadow: 0 1px 3px rgba(0,0,0,0.08);
 }
 
@@ -2015,7 +2024,7 @@ body {
 .quick-filter.active {
   border-color: var(--blue);
   background: var(--blue-soft);
-  color: var(--blue);
+  color: var(--accent-text);
 }
 
 .quick-filter span {
@@ -2040,7 +2049,7 @@ body {
   border: 1px solid var(--blue);
   border-radius: 8px;
   background: var(--blue);
-  color: white;
+  color: var(--accent-contrast);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -2048,7 +2057,7 @@ body {
 }
 
 .primary-button:hover:not(:disabled) {
-  background: #2d6bd0;
+  background: var(--accent-hover);
 }
 
 .primary-button:disabled {
@@ -2154,7 +2163,7 @@ body {
   align-items: center;
   gap: 6px;
   margin-left: 8px;
-  color: var(--blue);
+  color: var(--accent-text);
   font-size: 12px;
   font-weight: 500;
 }
@@ -2190,7 +2199,7 @@ body {
 
 .icon-button:hover {
   border-color: var(--blue);
-  color: var(--blue);
+  color: var(--accent-text);
   background: var(--surface-2);
 }
 
@@ -2204,7 +2213,7 @@ body {
 
 /* Sidebar */
 .app-body.sidebar-open {
-  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width, 220px) minmax(0, 1fr);
 }
 
 .app-body.sidebar-closed {
@@ -2258,7 +2267,7 @@ body {
 
 .nav-item.active {
   background: var(--blue-soft);
-  color: var(--blue);
+  color: var(--accent-text);
   font-weight: 600;
 }
 
@@ -2271,7 +2280,7 @@ body {
 }
 
 .nav-item.active .nav-icon {
-  color: var(--blue);
+  color: var(--accent-text);
 }
 
 .nav-badge {
@@ -2283,7 +2292,7 @@ body {
   padding: 0 6px;
   border-radius: 9px;
   background: var(--blue-soft);
-  color: var(--blue);
+  color: var(--accent-text);
   font-size: 11px;
   font-weight: 600;
 }
@@ -3038,7 +3047,7 @@ body {
 
 .edit-tabs button.active {
   background: var(--blue-soft);
-  color: var(--blue);
+  color: var(--accent-text);
 }
 
 .slider-control {
@@ -3056,7 +3065,7 @@ body {
 }
 
 .slider-control span b {
-  color: var(--blue);
+  color: var(--accent-text);
   font-variant-numeric: tabular-nums;
 }
 
@@ -3249,13 +3258,13 @@ body {
   aspect-ratio: 4 / 3;
   place-items: center;
   overflow: hidden;
-  color: var(--blue);
+  color: var(--accent-text);
 }
 .album-card-add .album-card-meta {
   justify-content: center;
 }
 .album-card-add .album-card-name {
-  color: var(--blue);
+  color: var(--accent-text);
   font-weight: 600;
 }
 
@@ -3284,7 +3293,7 @@ body {
 }
 
 .album-breadcrumb:hover {
-  color: var(--blue);
+  color: var(--accent-text);
 }
 
 .album-detail-heading {
@@ -3481,7 +3490,7 @@ body {
   width: 14px;
   height: 14px;
   border: 2px solid var(--line-strong);
-  border-top-color: var(--blue);
+  border-top-color: var(--accent-text);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -3530,7 +3539,7 @@ body {
 .empty-state button {
   border: none;
   background: transparent;
-  color: var(--blue);
+  color: var(--accent-text);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -3539,9 +3548,9 @@ body {
 /* Responsive */
 @media (max-width: 1100px) {
   .app-body {
-    /* Keep the full sidebar width: the stats rows need it for counts in the
-       thousands plus their size, and the main pane can spare 20px. */
-    grid-template-columns: 220px minmax(0, 1fr);
+    /* Keep whatever width the Sidebar Width setting chose; the main pane can
+       spare the difference. */
+    grid-template-columns: var(--sidebar-width, 220px) minmax(0, 1fr);
   }
   .library-layout.with-inspector {
     grid-template-columns: minmax(0, 1fr) 260px;
@@ -4077,7 +4086,7 @@ body {
   place-items: center;
   border-radius: 9px;
   background: var(--blue-soft);
-  color: var(--blue);
+  color: var(--accent-text);
 }
 
 .delete-album-safety p {
@@ -4285,7 +4294,7 @@ body {
 .slideshow-hud-actions button[aria-label="Slideshow settings"]:hover {
   border-color: var(--blue);
   background: color-mix(in srgb, var(--blue) 30%, transparent);
-  color: var(--blue);
+  color: var(--accent-text);
 }
 
 /* Tooltip-like labels on hover */

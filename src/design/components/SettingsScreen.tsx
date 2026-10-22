@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { useSettingsStore, useAppearance, useAccentColor, useSidebarWidth, useDefaultLayout, applyTheme } from "../../engine/stores";
+import { useSettingsStore, useAppearance, useAccentColor, useSidebarWidth, useDefaultLayout, useLibraryStore, useSystemDark, ACCENT_PALETTE } from "../../engine/stores";
+import { tauri } from "../../engine/commands/tauri";
 import type { LibraryFolder } from "../../engine/types/commands";
 import { SourcesManager } from "./SourcesManager";
 import { LockIcon, GearIcon, EyeIcon, FolderIcon, ShieldIcon, CpuIcon, TrashIcon, RotateCcwIcon, DownloadIcon, InfoIcon } from "./icons";
@@ -12,15 +13,6 @@ const TABS: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
   { id: "library", label: "Library", icon: <FolderIcon size={15} /> },
   { id: "privacy", label: "Privacy & Security", icon: <ShieldIcon size={15} /> },
   { id: "advanced", label: "Advanced", icon: <CpuIcon size={15} /> },
-];
-
-const ACCENT_COLORS: { id: string; label: string; color: string }[] = [
-  { id: "blue", label: "Blue", color: "#3474d4" },
-  { id: "purple", label: "Purple", color: "#8b5cf6" },
-  { id: "green", label: "Green", color: "#27845f" },
-  { id: "orange", label: "Orange", color: "#ea7a1a" },
-  { id: "pink", label: "Pink", color: "#db2777" },
-  { id: "red", label: "Red", color: "#dc2626" },
 ];
 
 const LAYOUT_OPTIONS = [
@@ -51,13 +43,20 @@ export function SettingsScreen(props: {
   onRemoveFolder?: (folder: LibraryFolder) => void;
 }) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
-  const [sidebarWidth, setSidebarWidthState] = useState(220);
+  const sidebarWidth = useSidebarWidth();
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletingLibrary, setDeletingLibrary] = useState(false);
+  const [rebuilding, setRebuilding] = useState(false);
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   
   // Settings values
   const appearance = useAppearance();
   const accentColor = useAccentColor();
+  // Which accent variant (light/dark) is live, so the swatches preview the
+  // color that will actually be applied.
+  const systemDark = useSystemDark();
+  const isDark = appearance === "dark" || (appearance === "system" && systemDark);
   const defaultLayout = useDefaultLayout();
   const vaultEnabled = useSettingsStore((s) => s.vaultEnabled);
   const vaultAutoLock = useSettingsStore((s) => s.vaultAutoLockMinutes);
@@ -85,29 +84,14 @@ export function SettingsScreen(props: {
   
   const update = useSettingsStore((s) => s.update);
   const updateMany = useSettingsStore((s) => s.updateMany);
-  const hydrate = useSettingsStore((s) => s.hydrate);
-  const loading = useSettingsStore((s) => s._loading);
   const resetSettings = useSettingsStore((s) => s.reset);
+  const loadLibrary = useLibraryStore((s) => s.loadLibrary);
+  const showNotice = useLibraryStore((s) => s.showNotice);
 
-  // Apply theme on mount and when settings change
-  useEffect(() => {
-    hydrate();
-  }, [hydrate]);
-
-  useEffect(() => {
-    if (!loading) applyTheme({ appearance, accentColor });
-  }, [appearance, accentColor, loading]);
-
-  // Sync sidebar width from store
-  useEffect(() => {
-    const unsub = useSettingsStore.subscribe(
-      (state) => setSidebarWidthState(state.sidebarWidth)
-    );
-    return unsub;
-  }, []);
+  // Settings hydration and theme application are owned by App.tsx, which is
+  // always mounted; Settings only reads and writes.
 
   const handleSidebarWidthChange = (width: number) => {
-    setSidebarWidthState(width);
     update("sidebarWidth", width);
   };
 
@@ -118,8 +102,64 @@ export function SettingsScreen(props: {
 
   const handleDeleteLibrary = useCallback(async () => {
     setShowDeleteConfirm(false);
-    await resetSettings(); // Using resetSettings as a placeholder for now
-  }, [resetSettings]);
+    setDeletingLibrary(true);
+    try {
+      await tauri.library.deleteDatabase();
+      await loadLibrary();
+      showNotice("Library database deleted. Original files were left untouched.");
+    } catch (e) {
+      showNotice(`Could not delete the library database: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setDeletingLibrary(false);
+    }
+  }, [loadLibrary, showNotice]);
+
+  // Re-scan every registered source through the existing scan path. There is no
+  // thumbnail cache yet, so this is the honest replacement for "Clear Cache".
+  const handleRebuildLibrary = useCallback(async () => {
+    setRebuilding(true);
+    try {
+      const folders = await tauri.library.getFolders();
+      if (!folders.length) {
+        showNotice("No library folders to rebuild.");
+        return;
+      }
+      for (const folder of folders) {
+        await tauri.library.scan(folder.path);
+      }
+      await loadLibrary();
+      showNotice(`Rebuilt ${folders.length} folder${folders.length === 1 ? "" : "s"}.`);
+    } catch (e) {
+      showNotice(`Rebuild failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setRebuilding(false);
+    }
+  }, [loadLibrary, showNotice]);
+
+  // Standard ARIA tabs keyboard model: arrows cycle, Home/End jump.
+  const handleTabKeyDown = (event: React.KeyboardEvent, index: number) => {
+    const last = TABS.length - 1;
+    let next = index;
+    switch (event.key) {
+      case "ArrowRight":
+        next = index === last ? 0 : index + 1;
+        break;
+      case "ArrowLeft":
+        next = index === 0 ? last : index - 1;
+        break;
+      case "Home":
+        next = 0;
+        break;
+      case "End":
+        next = last;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    setActiveTab(TABS[next].id);
+    tabRefs.current[next]?.focus();
+  };
 
   const renderRadioGroup = (
     name: string,
@@ -146,17 +186,27 @@ export function SettingsScreen(props: {
 
   const renderAccentPicker = (value: string, onChange: (v: string) => void) => (
     <div className="accent-picker" role="radiogroup" aria-label="Accent color">
-      {ACCENT_COLORS.map((c) => (
-        <button
-          key={c.id}
-          type="button"
-          className={`accent-option ${value === c.id ? "selected" : ""}`}
-          style={{ background: c.color }}
-          onClick={() => onChange(c.id)}
-          aria-label={c.label}
-          aria-pressed={value === c.id}
-        />
-      ))}
+      {ACCENT_PALETTE.map((c) => {
+        const selected = value === c.id;
+        return (
+          <button
+            key={c.id}
+            type="button"
+            className={`accent-option ${selected ? "selected" : ""}`}
+            onClick={() => onChange(c.id)}
+            aria-label={c.label}
+            aria-pressed={selected}
+            title={c.label}
+          >
+            <span
+              className="accent-swatch"
+              style={{ background: isDark ? c.dark : c.light }}
+              aria-hidden="true"
+            />
+            <span className="accent-name">{c.label}</span>
+          </button>
+        );
+      })}
     </div>
   );
 
@@ -172,15 +222,18 @@ export function SettingsScreen(props: {
 
       {/* Tabs */}
       <div className="settings-tabs" role="tablist" aria-label="Settings categories">
-        {TABS.map((tab) => (
+        {TABS.map((tab, index) => (
           <button
             key={tab.id}
+            ref={(el) => { tabRefs.current[index] = el; }}
             role="tab"
             aria-selected={activeTab === tab.id}
             aria-controls={`panel-${tab.id}`}
             id={`tab-${tab.id}`}
+            tabIndex={activeTab === tab.id ? 0 : -1}
             className={`settings-tab ${activeTab === tab.id ? "active" : ""}`}
             onClick={() => setActiveTab(tab.id)}
+            onKeyDown={(event) => handleTabKeyDown(event, index)}
           >
             <span className="settings-tab-icon">{tab.icon}</span>
             <span className="settings-tab-label">{tab.label}</span>
@@ -244,6 +297,9 @@ export function SettingsScreen(props: {
           setShowDeleteConfirm={setShowDeleteConfirm}
           onConfirmReset={handleResetSettings}
           onConfirmDelete={handleDeleteLibrary}
+          deleting={deletingLibrary}
+          onRebuild={handleRebuildLibrary}
+          rebuilding={rebuilding}
         />}
       </div>
 
@@ -338,7 +394,7 @@ function GeneralPanel(props: {
               type="range"
               className="settings-slider"
               min={180}
-              max={320}
+              max={360}
               step={4}
               value={props.sidebarWidth}
               onChange={(e) => props.onSidebarWidthChange(Number(e.target.value))}
@@ -496,6 +552,7 @@ function ViewingPanel(props: {
               step={1}
               value={props.slideshowInterval}
               onChange={(e) => props.onChange("slideshowInterval", Number(e.target.value))}
+              aria-label="Slideshow interval in seconds"
             />
             <span className="settings-slider-value">{props.slideshowInterval}s</span>
           </div>
@@ -707,6 +764,7 @@ function PrivacyPanel(props: {
               step={1}
               value={props.vaultAutoLock}
               onChange={(e) => props.onChange("vaultAutoLockMinutes", Number(e.target.value))}
+              aria-label="Vault auto-lock timeout in minutes"
             />
             <span className="settings-slider-value">
               {props.vaultAutoLock === 0 ? "Never" : `${props.vaultAutoLock} min`}
@@ -829,6 +887,9 @@ function AdvancedPanel(props: {
   setShowDeleteConfirm: (v: boolean) => void;
   onConfirmReset: () => void;
   onConfirmDelete: () => void;
+  deleting: boolean;
+  onRebuild: () => void;
+  rebuilding: boolean;
 }) {
   return (
     <>
@@ -850,6 +911,7 @@ function AdvancedPanel(props: {
               step={1}
               value={props.maxCacheSize}
               onChange={(e) => props.onChange("maxCacheSizeGB", Number(e.target.value))}
+              aria-label="Maximum cache size in gigabytes"
             />
             <span className="settings-slider-value">{props.maxCacheSize} GB</span>
           </div>
@@ -868,13 +930,25 @@ function AdvancedPanel(props: {
               step={5}
               value={props.thumbnailQuality}
               onChange={(e) => props.onChange("thumbnailQuality", Number(e.target.value))}
+              aria-label="Thumbnail JPEG quality percentage"
             />
             <span className="settings-slider-value">{props.thumbnailQuality}%</span>
           </div>
         </div>
         <div className="settings-row">
+          <div className="settings-row-label">
+            <b>Rebuild Library</b>
+            <span className="settings-row-desc">Re-scan every source folder and refresh the catalog</span>
+          </div>
           <div className="settings-row-control">
-            <button className="quiet-button" type="button">Clear Cache Now</button>
+            <button
+              className="quiet-button"
+              type="button"
+              onClick={props.onRebuild}
+              disabled={props.rebuilding}
+            >
+              {props.rebuilding ? "Rebuilding…" : "Rebuild Library"}
+            </button>
           </div>
         </div>
       </section>
@@ -917,7 +991,7 @@ function AdvancedPanel(props: {
         </div>
       </section>
 
-      <section className="settings-section">
+      <section className="settings-section settings-danger-zone">
         <h2 className="settings-section-title">
           <TrashIcon size={14} /> Danger Zone
         </h2>
@@ -938,8 +1012,13 @@ function AdvancedPanel(props: {
             <span className="settings-row-desc">Removes catalog, albums, tags. Original files unaffected.</span>
           </div>
           <div className="settings-row-control">
-            <button className="danger-button" type="button" onClick={() => props.setShowDeleteConfirm(true)}>
-              Delete Library Database
+            <button
+              className="danger-button"
+              type="button"
+              onClick={() => props.setShowDeleteConfirm(true)}
+              disabled={props.deleting}
+            >
+              {props.deleting ? "Deleting…" : "Delete Library Database"}
             </button>
           </div>
         </div>

@@ -1392,8 +1392,6 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             onRemoveItems={vault.removeItems}
             onToggleEnabled={(e: any) => vault.toggleEnabled(e)}
             onSetAutoLock={(m: any) => vault.setAutoLock(m)}
-            onSetPassword={(pwd: string) => { tauri.vault.setPassword(pwd).catch(console.error); }}
-            onClearPassword={() => { tauri.vault.clearPassword().catch(console.error); }}
             onNavigate={setScreen}
             onCreateAlbum={openAlbumDialog}
             notice={showNotice}
@@ -3168,7 +3166,6 @@ function BatchScreen(props: any) {
 
 function VaultScreen(props: any) {
   const [password, setPassword] = React.useState("");
-  const [error, setError] = React.useState("");
   if (!props.unlocked) {
     return (
       <div className="vault-page">
@@ -3191,7 +3188,7 @@ function VaultScreen(props: any) {
           <p>
             Items in the vault are encrypted and hidden from the main library. Unlock with Touch ID or password.
           </p>
-          <button className="primary-button" type="button" onClick={() => { props.onUnlock(undefined, true).catch((e: any) => setError(String(e))); }}>
+          <button className="primary-button" type="button" onClick={() => props.onUnlock(true)}>
             Unlock with Touch ID
           </button>
           <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap", marginTop: 14 }}>
@@ -3201,17 +3198,10 @@ function VaultScreen(props: any) {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Password"
             />
-            <button className="quiet-button" type="button" onClick={async () => { try { await props.onUnlock(password, false); setPassword(""); setError(""); } catch (e: any) { setError(String(e)); } }}>
+            <button className="quiet-button" type="button" onClick={() => { props.onUnlock(false); setPassword(""); }}>
               Unlock
             </button>
-            <button className="quiet-button" type="button" onClick={async () => { try { await props.onSetPassword?.(password); setPassword(""); setError("Password set"); } catch (e: any) { setError(String(e)); } }}>
-              Set password
-            </button>
-            <button className="quiet-button" type="button" onClick={async () => { try { await props.onClearPassword?.(); setError("Password cleared"); } catch (e: any) { setError(String(e)); } }}>
-              Reset
-            </button>
           </div>
-          {error && <small style={{ color: "var(--danger, #c00)" }}>{error}</small>}
           <small>Or use password</small>
         </div>
       </div>

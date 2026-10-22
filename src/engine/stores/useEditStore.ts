@@ -14,6 +14,7 @@ interface EditState {
   // Actions
   open: (item: MediaItem) => void;
   close: () => void;
+  saveDraft: () => void;
   setValue: <K extends keyof EditValues>(key: K, value: EditValues[K]) => void;
   setValues: (values: Partial<EditValues>) => void;
   reset: () => void;
@@ -94,6 +95,13 @@ export const useEditStore = create<EditState>()(
       },
 
       close: () => set({ item: null, values: defaultEdits, crop: defaultCrop, history: [defaultEdits], historyIndex: 0 }),
+
+      saveDraft: () => {
+        const { item, values, history, historyIndex } = get();
+        if (item && typeof localStorage !== "undefined") {
+          try { localStorage.setItem(`edit:draft:${item.id}`, JSON.stringify({ values, history, historyIndex })); } catch {}
+        }
+      },
 
       setValue: (key, value) => {
         const { values, history, historyIndex, item } = get();

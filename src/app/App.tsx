@@ -1249,6 +1249,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             canUndo={edit.canUndo}
             canRedo={edit.canRedo}
             onClose={edit.close}
+            onSaveDraft={edit.saveDraft}
             onExport={async () => {
               const item = edit.item;
               if (!item) return;
@@ -1297,7 +1298,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             onNotice={showNotice}
             assetUrl={assetUrl}
             items={library.items.filter((i: any) => i.kind === "photo")}
-            onOpenEdit={(item: any) => { edit.open(item); }}
+            onOpenEdit={(item: any) => { edit.saveDraft(); edit.open(item); }}
           />}
 
           {screen === "Batch" && <BatchScreen
@@ -2884,11 +2885,23 @@ function EditScreen(props: any) {
             </label>
           ))}
           <div className="edit-footer">
+            <button className="quiet-button" type="button" onClick={() => { props.onSaveDraft?.(); props.onClose(); }}>Change photo</button>
             <button className="quiet-button" type="button" onClick={props.onReset}>Reset</button>
             <button className="quiet-button" type="button" onClick={props.onClearDraft}>Discard draft</button>
             <button className="primary-button" type="button" onClick={props.onExport}>Export edited copy</button>
           </div>
         </aside>
+      </div>
+      <div className="drafts-row">
+        <h3>Drafts</h3>
+        <div className="edit-picker-grid compact">
+          {(props.items||[]).filter((it:any) => { try { return !!localStorage.getItem(`edit:draft:${it.id}`); } catch { return false; } }).map((item:any) => (
+            <button key={item.id} type="button" className="edit-picker-tile" onClick={() => { props.onSaveDraft?.(); props.onOpenEdit?.(item); }}>
+              <img src={props.assetUrl(item.path)} alt={item.name} />
+              <span>{item.name}</span>
+            </button>
+          ))}
+        </div>
       </div>
       <p className="browser-capability-warning">Browser canvas export supports JPEG, PNG, and WebP input when the browser can decode it. HEIC and RAW need native macOS image frameworks. Metadata is removed from re-encoded exports.</p>
     </div>

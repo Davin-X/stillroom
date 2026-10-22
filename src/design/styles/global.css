@@ -1351,3 +1351,6 @@ body {
 .draft-remove:hover { background: rgba(0,0,0,.75); }
 .search-input { height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); font-size: 12px; outline: none; }
 .search-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--blue-soft); }
+
+.edit-controls { max-height: 80vh; overflow-y: auto; }
+.editor-layout { align-items: start; }

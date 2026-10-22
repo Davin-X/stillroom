@@ -96,6 +96,8 @@ function App() {
   const albumInputRef = useRef<HTMLInputElement | null>(null);
 
   const [albumPendingDelete, setAlbumPendingDelete] = useState<any | null>(null);
+  const [itemPendingDelete, setItemPendingDelete] = useState<string[] | null>(null);
+  const [albumRemovePending, setAlbumRemovePending] = useState<{ albumId: string; itemIds: string[] } | null>(null);
   const [deletingAlbum, setDeletingAlbum] = useState(false);
 
   // Removing a folder is confirmed through its own dialog so a stray click in
@@ -342,8 +344,8 @@ function App() {
   }, []);
 
   // Latest render values, so long-lived event handlers never read stale stores.
-  const liveRef = useRef({ library, viewer, edit, settings, vault, screen, albumDialogOpen, albumPickerOpen, albumPendingDelete, folderPendingRemove, sourcesSheetOpen });
-  liveRef.current = { library, viewer, edit, settings, vault, screen, albumDialogOpen, albumPickerOpen, albumPendingDelete, folderPendingRemove, sourcesSheetOpen };
+  const liveRef = useRef({ library, viewer, edit, settings, vault, screen, albumDialogOpen, albumPickerOpen, albumPendingDelete, itemPendingDelete, folderPendingRemove, sourcesSheetOpen });
+  liveRef.current = { library, viewer, edit, settings, vault, screen, albumDialogOpen, albumPickerOpen, albumPendingDelete, itemPendingDelete, folderPendingRemove, sourcesSheetOpen };
 
   // Handlers are declared further down; stable listeners reach them through a ref.
   const handlersRef = useRef<{
@@ -396,7 +398,7 @@ function App() {
 
     // Keyboard shortcuts
     const handleKeyDown = (e: KeyboardEvent) => {
-      const { library, viewer, screen, albumDialogOpen, albumPickerOpen, albumPendingDelete, folderPendingRemove, sourcesSheetOpen } = liveRef.current;
+      const { library, viewer, screen, albumDialogOpen, albumPickerOpen, albumPendingDelete, itemPendingDelete, folderPendingRemove, sourcesSheetOpen } = liveRef.current;
       const mod = e.metaKey || e.ctrlKey;
       const key = e.key.toLowerCase();
 
@@ -406,7 +408,7 @@ function App() {
 
       // While a modal is open, every key belongs to it (the dialogs own Enter
       // and Escape) instead of the global shortcut map.
-      if (albumDialogOpen || albumPickerOpen || albumPendingDelete || folderPendingRemove || sourcesSheetOpen) return;
+      if (albumDialogOpen || albumPickerOpen || albumPendingDelete || itemPendingDelete || folderPendingRemove || sourcesSheetOpen) return;
 
       if (mod && key === "o") { e.preventDefault(); handlersRef.current.importFolder(); return; }
       if (mod && key === "i") { e.preventDefault(); handlersRef.current.importFiles(); return; }
@@ -649,6 +651,37 @@ function App() {
     openAlbumDialog(seedIds);
   };
 
+  const confirmRemoveFromAlbum = async () => {
+    if (!albumRemovePending) return;
+    try {
+      await library.removeFromAlbum(albumRemovePending.albumId, albumRemovePending.itemIds);
+      showNotice(`Removed ${albumRemovePending.itemIds.length} item${albumRemovePending.itemIds.length === 1 ? "" : "s"} from album.`);
+      setAlbumRemovePending(null);
+    } catch (error) {
+      showNotice(`Could not remove: ${describeError(error)}`);
+    }
+  };
+  const confirmDeleteItem = async () => {
+    if (!itemPendingDelete) return;
+    try {
+      await library.deleteItems(itemPendingDelete);
+      showNotice(`Moved ${itemPendingDelete.length} item${itemPendingDelete.length === 1 ? "" : "s"} to Trash.`);
+      setItemPendingDelete(null);
+    } catch (error) {
+      showNotice(`Could not delete: ${describeError(error)}`);
+    }
+  };
+
+  useEffect(() => {
+    if (!itemPendingDelete) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      setItemPendingDelete(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [itemPendingDelete]);
   const confirmDeleteAlbum = async () => {
     if (!albumPendingDelete || deletingAlbum) return;
     const wasActiveAlbum = library.activeAlbum === albumPendingDelete.id;
@@ -1174,6 +1207,8 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             onSetHiddenForIds={library.setHiddenForIds}
             onUpdateTags={library.updateItemTags}
             onDeleteItems={library.deleteItems}
+            onRequestDeleteItems={(ids: string[]) => setItemPendingDelete(ids)}
+            onRequestRemoveFromAlbum={(albumId: string, itemIds: string[]) => setAlbumRemovePending({ albumId, itemIds })}
             onOpenViewer={(id?: string) => { viewer.open(id); setScreen("Viewer"); }}
             onOpenEdit={(item: any) => { edit.open(item); setScreen("Edit"); }}
             onImportFolder={() => importFolder()}
@@ -1643,6 +1678,52 @@ handlersRef.current = { importFolder, importFiles, showNotice };
         </div>
       )}
 
+      {itemPendingDelete && (
+        <div
+          className="dialog-backdrop"
+          role="presentation"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setItemPendingDelete(null); }}
+        >
+          <div className="album-dialog delete-album-dialog" role="alertdialog" aria-modal="true">
+            <div className="dialog-heading">
+              <div>
+                <p className="eyebrow">PHOTO</p>
+                <h2>Delete Item?</h2>
+              </div>
+              <button type="button" className="dialog-close" aria-label="Close" onClick={() => setItemPendingDelete(null)}>×</button>
+            </div>
+            <p className="delete-album-copy">
+              Are you sure you want to delete <b>{itemPendingDelete.length} item{itemPendingDelete.length === 1 ? "" : "s"}</b>? They will be moved to Trash.
+            </p>
+            <div className="dialog-actions">
+              <button type="button" className="quiet-button" onClick={() => setItemPendingDelete(null)}>Cancel</button>
+              <button type="button" className="danger-button" onClick={confirmDeleteItem}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {albumRemovePending && (
+        <div className="dialog-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) setAlbumRemovePending(null); }}>
+          <div className="album-dialog delete-album-dialog" role="alertdialog" aria-modal="true">
+            <div className="dialog-heading">
+              <div>
+                <p className="eyebrow">ALBUM</p>
+                <h2>Remove from Album?</h2>
+              </div>
+              <button type="button" className="dialog-close" aria-label="Close" onClick={() => setAlbumRemovePending(null)}>×</button>
+            </div>
+            <p className="delete-album-copy">
+              Remove {albumRemovePending.itemIds.length} item{albumRemovePending.itemIds.length === 1 ? "" : "s"} from this album?
+            </p>
+            <div className="dialog-actions">
+              <button type="button" className="quiet-button" onClick={() => setAlbumRemovePending(null)}>Cancel</button>
+              <button type="button" className="danger-button" onClick={confirmRemoveFromAlbum}>Remove</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {sourcesSheetOpen && (
         <div
           className="dialog-backdrop"
@@ -2091,14 +2172,14 @@ function LibraryScreen(props: any) {
       ? [{
           label: "Remove from this Album",
           danger: true,
-          onClick: () => library.removeFromAlbum(props.activeAlbum, [item.id]),
+          onClick: () => props.onRequestRemoveFromAlbum?.(props.activeAlbum, [item.id]),
         }]
       : []),
     { label: "New Album…", onClick: () => props.onCreateAlbum?.([item.id]) },
     { divider: true },
     { label: "Favorite", onClick: () => props.onToggleFavorite(item.id) },
-    { label: "Hide", onClick: () => props.onToggleHidden(item.id) },
-    { label: "Delete", danger: true, onClick: () => props.onDeleteItems([item.id]) },
+    { label: item.hidden ? "Show in Gallery" : "Remove from Gallery", onClick: () => props.onToggleHidden(item.id) },
+    { label: "Delete", danger: true, onClick: () => props.onRequestDeleteItems?.([item.id]) },
   ];
 
   // Batch actions live in the contextual selection bar, so resolve the

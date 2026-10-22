@@ -3166,23 +3166,25 @@ function VaultScreen(props: any) {
   }
   return (
     <div className="vault-page">
-      <div className="page-heading">
-        <div><p className="eyebrow">PRIVATE VAULT</p><h1>Vault Contents</h1><p className="page-subtitle">{props.items.length} protected items</p></div>
-        <button className="quiet-button" type="button" onClick={props.onLock}>Lock vault</button>
-      </div>
-      <div className="vault-settings">
-        <div><b>Auto-lock</b><small>Lock after {props.autoLock} minutes of inactivity</small></div>
-        <input type="range" min={1} max={60} value={props.autoLock} onChange={(e) => props.onSetAutoLock(Number(e.target.value))} />
-      </div>
-      <div className="vault-thumbnails">
-        {props.items.map((item: any) => (
-          <button key={item.id} type="button" onClick={() => props.onRemoveItems([item.id])}>
-            {item.kind === "photo" ? <img src={props.assetUrl(item.path)} alt={item.name} /> : <div className="duplicate-nonimage"><KindBadge kind={item.kind} /></div>}
-            <span>{item.name}</span>
-            <i>Remove</i>
-          </button>
-        ))}
-        {props.items.length === 0 && <p className="vault-empty">No items in vault. Select items in Library and add them here.</p>}
+      <div style={{ maxWidth: 760, margin: "0 auto", width: "100%" }}>
+        <div className="page-heading">
+          <div><p className="eyebrow">PRIVATE VAULT</p><h1>Vault Contents</h1><p className="page-subtitle">{props.items.length} protected items</p></div>
+          <button className="quiet-button" type="button" onClick={props.onLock}>Lock vault</button>
+        </div>
+        <div className="vault-settings">
+          <div><b>Auto-lock</b><small>Lock after {props.autoLock} minutes of inactivity</small></div>
+          <input type="range" min={1} max={60} value={props.autoLock} onChange={(e) => props.onSetAutoLock(Number(e.target.value))} />
+        </div>
+        <div className="vault-thumbnails">
+          {props.items.map((item: any) => (
+            <button key={item.id} type="button" onClick={() => props.onRemoveItems([item.id])}>
+              {item.kind === "photo" ? <img src={props.assetUrl(item.path)} alt={item.name} /> : <div className="duplicate-nonimage"><KindBadge kind={item.kind} /></div>}
+              <span>{item.name}</span>
+              <i>Remove</i>
+            </button>
+          ))}
+          {props.items.length === 0 && <p className="vault-empty">No items in vault. Select items in Library and add them here.</p>}
+        </div>
       </div>
     </div>
   );

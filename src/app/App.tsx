@@ -1201,7 +1201,15 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             onOpenAlbums={() => openScreen("Albums")}
             onAddItems={(albumId: string) => addItemsToAlbum(albumId)}
             onOpenAlbumPicker={(itemIds?: string[]) => openAlbumPicker(itemIds)}
-            onAddToVault={vault.unlocked ? (ids: string[]) => { vault.addItems(ids); setScreen("Vault"); } : undefined}
+            onAddToVault={(ids: string[]) => {
+              if (!vault.unlocked) {
+                showNotice?.("Unlock the vault first, then add items.");
+                setScreen("Vault");
+                return;
+              }
+              vault.addItems(ids);
+              setScreen("Vault");
+            }}
             onAlbumMenu={(e: React.MouseEvent) => {
               const album = library.albums.find((a: any) => a.id === library.activeAlbum);
               if (album) openAlbumMenu(album, e);

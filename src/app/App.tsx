@@ -2862,7 +2862,7 @@ function EditScreen(props: any) {
           return (
             <div style={{ marginBottom: 16 }}>
               <h3 style={{ margin: "0 0 8px", color: "var(--text)" }}>Drafts</h3>
-              <div className="edit-picker-grid" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
+              <div className="edit-picker-grid" style={{ gridTemplateColumns: "repeat(6, 1fr)", maxHeight: "none", overflow: "visible" }}>
                 {drafts.map((item: any) => (
                   <button key={item.id} type="button" className="edit-picker-tile" onClick={() => props.onOpenEdit?.(item)}>
                     <img src={props.assetUrl(item.path)} alt={item.name} />

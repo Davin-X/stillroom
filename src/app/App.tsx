@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo, memo } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-import { save } from "@tauri-apps/plugin-dialog";
+import { save, open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { currentMonitor, getCurrentWindow, LogicalSize, PhysicalPosition } from "@tauri-apps/api/window";
 import { tauri, events } from "../engine/commands/tauri";
 import {
@@ -2804,22 +2804,13 @@ function ViewerScreen(props: any) {
 }
 
 function EditScreen(props: any) {
-  if (!props.item) {
-    return (
-      <div className="edit-page">
-        <div className="page-heading">
-          <div><p className="eyebrow">NON-DESTRUCTIVE EDITING</p><h1>Select a photo to edit</h1><p className="page-subtitle">Choose a browser-supported photo from your library, then open the editor.</p></div>
-        </div>
-        {(props.items||[]).length>0 ? (<div className="edit-picker-grid">{(props.items||[]).slice(0,12).map((item:any)=>(<button key={item.id} type="button" className="edit-picker-tile" onClick={()=>props.onOpenEdit?.(item)}><img src={props.assetUrl(item.path)} alt={item.name}/><span>{item.name}</span></button>))}</div>) : (<div className="viewer-empty-state"><div style={{ marginBottom: 16 }}><BrandMark size={56} /></div><h2>No photos in library</h2><p>Import a folder first, then come back to edit.</p></div>) }
-      </div>
-    );
-  }
-  const values = props.values;
-  const crop = props.crop || { enabled:false, x:0,y:0,width:1,height:1 };
+  const [pickerQuery, setPickerQuery] = useState("");
   const stageRef = useRef<any>(null);
   const [drag, setDrag] = useState<any>(null);
+  const values = props.values || {};
+  const crop = props.crop || { enabled:false, x:0,y:0,width:1,height:1 };
   useEffect(() => {
-    if (!drag) return;
+    if (!drag || !props.item) return;
     const onMove = (e: any) => {
       const dx = (e.clientX - drag.startX) / drag.rect.width;
       const dy = (e.clientY - drag.startY) / drag.rect.height;
@@ -2843,6 +2834,30 @@ function EditScreen(props: any) {
     const rect = stageRef.current.getBoundingClientRect();
     setDrag({ type, startX: e.clientX, startY: e.clientY, crop: { ...crop }, rect });
   };
+  if (!props.item) {
+    const filtered = (props.items || []).filter((it: any) => !pickerQuery || String(it.name || "").toLowerCase().includes(pickerQuery.toLowerCase()));
+    const browse = async () => {
+      try {
+        const sel = await openFileDialog({ multiple: false, filters: [{ name: "Images", extensions: ["jpg","jpeg","png","webp","heic","heif","tif","tiff"] }] });
+        if (!sel) return;
+        const path = Array.isArray(sel) ? sel[0] : sel;
+        const name = String(path).split(/[\\/]/).pop() || "photo";
+        props.onOpenEdit?.({ id: path, name, path, kind: "photo" });
+      } catch (e) { props.onNotice?.("Could not open file"); }
+    };
+    return (
+      <div className="edit-page">
+        <div className="page-heading">
+          <div><p className="eyebrow">NON-DESTRUCTIVE EDITING</p><h1>Select a photo to edit</h1><p className="page-subtitle">Choose a browser-supported photo from your library or browse from disk, then open the editor.</p></div>
+        </div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          <input className="search-input" placeholder="Search photos..." value={pickerQuery} onChange={(e) => setPickerQuery(e.target.value)} style={{ flex: 1 }} />
+          <button className="quiet-button" type="button" onClick={browse}>Browse from Finder…</button>
+        </div>
+        {filtered.length>0 ? (<div className="edit-picker-grid">{filtered.map((item:any)=>(<button key={item.id} type="button" className="edit-picker-tile" onClick={()=>props.onOpenEdit?.(item)}><img src={props.assetUrl(item.path)} alt={item.name}/><span>{item.name}</span></button>))}</div>) : (<div className="viewer-empty-state"><div style={{ marginBottom: 16 }}><BrandMark size={56} /></div><h2>No photos found</h2><p>Import a folder or browse from disk.</p></div>) }
+      </div>
+    );
+  }
   return (
     <div className="edit-page">
       <div className="page-heading">

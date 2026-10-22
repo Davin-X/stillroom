@@ -1358,3 +1358,7 @@ body {
 .edit-page { overflow-y: auto; max-height: calc(100vh - 60px); }
 
 .edit-page { max-width: none; width: 100%; }
+.edit-page { max-height: none; overflow: visible; }
+.editor-layout { height: calc(100vh - 120px); align-items: stretch; }
+.edit-canvas { min-height: 0; }
+.edit-controls { overflow-y: auto; }

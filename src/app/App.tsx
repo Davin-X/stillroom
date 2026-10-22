@@ -884,9 +884,6 @@ function App() {
       const selectedItem = library.items.find(i => i.id === library.inspectedId);
       if (selectedItem && selectedItem.kind === "photo") {
         edit.open(selectedItem);
-      } else {
-        showNotice("Select a photo to edit.");
-        return;
       }
     }
     if (next === "Vault") vault.loadStatus();
@@ -1177,6 +1174,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             onUpdateTags={library.updateItemTags}
             onDeleteItems={library.deleteItems}
             onOpenViewer={(id?: string) => { viewer.open(id); setScreen("Viewer"); }}
+            onOpenEdit={(item: any) => { edit.open(item); setScreen("Edit"); }}
             onImportFolder={() => importFolder()}
             onImportFiles={() => importFiles()}
             onPlaySlideshow={playSlideshow}
@@ -1252,6 +1250,8 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             onClose={edit.close}
             onExport={async () => showNotice("Export - coming soon")}
             assetUrl={assetUrl}
+            items={library.items.filter((i: any) => i.kind === "photo")}
+            onOpenEdit={(item: any) => { edit.open(item); }}
           />}
 
           {screen === "Batch" && <BatchScreen
@@ -2026,6 +2026,7 @@ function LibraryScreen(props: any) {
   // membership. The picker itself carries the album list and search.
   const itemContextMenu = (item: any) => [
     { label: "Open", onClick: () => props.onOpenViewer(item.id) },
+    ...(item.kind === "photo" ? [{ label: "Edit", onClick: () => { props.onOpenEdit?.(item); } }] : []),
     { label: "Open in Finder", onClick: () => tauri.items.revealInFinder(item.path) },
     { divider: true },
     { label: "Add to Album…", onClick: () => props.onOpenAlbumPicker?.([item.id]) },
@@ -2762,7 +2763,7 @@ function EditScreen(props: any) {
         <div className="page-heading">
           <div><p className="eyebrow">NON-DESTRUCTIVE EDITING</p><h1>Select a photo to edit</h1><p className="page-subtitle">Choose a browser-supported photo from your library, then open the editor.</p></div>
         </div>
-        <div className="viewer-empty-state"><div style={{ marginBottom: 16 }}><BrandMark size={56} /></div><h2>No photo selected</h2><p>Open a photo in the viewer, then click Edit, or select one in the library.</p><button className="primary-button" type="button" onClick={() => {}}>Open Library</button></div>
+        {(props.items||[]).length>0 ? (<div className="edit-picker-grid">{(props.items||[]).slice(0,12).map((item:any)=>(<button key={item.id} type="button" className="edit-picker-tile" onClick={()=>props.onOpenEdit?.(item)}><img src={props.assetUrl(item.path)} alt={item.name}/><span>{item.name}</span></button>))}</div>) : (<div className="viewer-empty-state"><div style={{ marginBottom: 16 }}><BrandMark size={56} /></div><h2>No photos in library</h2><p>Import a folder first, then come back to edit.</p></div>) }
       </div>
     );
   }

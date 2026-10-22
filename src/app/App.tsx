@@ -3186,9 +3186,12 @@ function VaultScreen(props: any) {
             <button className="quiet-button" type="button" onClick={props.onLock}>Lock vault</button>
           </div>
         </div>
-        <div className="vault-settings">
-          <div><b>Auto-lock</b><small>Lock after {props.autoLock} minutes of inactivity</small></div>
-          <input type="range" min={1} max={60} value={props.autoLock} onChange={(e) => props.onSetAutoLock(Number(e.target.value))} />
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, maxWidth: 480, margin: "22px auto 0", padding: "12px 16px", border: "1px solid var(--line)", borderRadius: 8, background: "var(--surface-2)" }}>
+          <div style={{ display: "grid", gap: 2 }}>
+            <b style={{ color: "var(--text)", fontSize: 12 }}>Auto-lock</b>
+            <small style={{ color: "var(--muted)", fontSize: 13 }}>Lock after {props.autoLock} minutes of inactivity</small>
+          </div>
+          <input type="range" min={1} max={60} value={props.autoLock} onChange={(e) => props.onSetAutoLock(Number(e.target.value))} style={{ width: 160, maxWidth: "100%" }} />
         </div>
         <div className="vault-thumbnails">
           {props.items.map((item: any) => (

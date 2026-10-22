@@ -2958,9 +2958,10 @@ function EditScreen(props: any) {
         <h3 style={{ color: "var(--text)" }}>Drafts</h3>
         <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8 }}>
           {(props.items||[]).filter((it:any) => { try { return !!localStorage.getItem(`edit:draft:${it.id}`); } catch { return false; } }).map((item:any) => (
-            <button key={item.id} type="button" className="edit-picker-tile" style={{ minWidth: 120, width: 120 }} onClick={() => { props.onSaveDraft?.(); props.onOpenEdit?.(item); }}>
+            <button key={item.id} type="button" className="edit-picker-tile" style={{ minWidth: 120, width: 120, position: "relative" }} onClick={() => { props.onSaveDraft?.(); props.onOpenEdit?.(item); }}>
               <img src={props.assetUrl(item.path)} alt={item.name} />
               <span>{item.name}</span>
+              <span className="draft-remove" onClick={(e) => { e.stopPropagation(); try { localStorage.removeItem(`edit:draft:${item.id}`); } catch {} props.onNotice?.("Draft removed"); }} title="Remove draft">×</span>
             </button>
           ))}
         </div>

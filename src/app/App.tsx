@@ -161,6 +161,9 @@ function App() {
   const viewer = useViewerStore();
   const edit = useEditStore();
   const vault = useVaultStore();
+  React.useEffect(() => {
+    if (!vault.unlocked && library.filter === "Hidden") library.setFilter("All");
+  }, [vault.unlocked, library.filter]);
   const batch = useBatchStore();
   const settings = useSettingsStore();
 
@@ -1153,6 +1156,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
                   <span className="stat-size">· {formatBytesSimple(libraryStats.favoriteSize)}</span>
                 </span>
               </div>
+              {vault.unlocked && (
               <div className="stat-row hidden">
                 <KindDot kind="photo" />
                 <span className="stat-label">Hidden</span>
@@ -1161,6 +1165,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
                   <span className="stat-size">· {formatBytesSimple(libraryStats.hiddenSize)}</span>
                 </span>
               </div>
+              )}
               <div className="stat-row size">
                 <span className="stat-label">Total</span>
                 <span className="stat-value">
@@ -2351,7 +2356,7 @@ function LibraryScreen(props: any) {
               </div>
               <div className="filter-cluster">
                 <span className="smart-label">SHOW</span>
-                {["All", "Photos", "Videos", "RAW", "Favorites", "Hidden"].map((f) => {
+                {[...(["All", "Photos", "Videos", "RAW", "Favorites"] as string[]), ...(vault.unlocked ? ["Hidden"] : [])].map((f) => {
                   const count = filterCounts[f as keyof typeof filterCounts] ?? 0;
                   return (
                     <button key={f} type="button" className={`quick-filter ${props.filter === f ? "active" : ""}`} onClick={() => props.onChangeFilter(f)}>

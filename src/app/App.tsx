@@ -2937,10 +2937,10 @@ function EditScreen(props: any) {
             </label>
           ))}
           <div className="edit-footer">
-            <button className="quiet-button" type="button" onClick={() => { props.onSaveDraft?.(); props.onClose(); }}>Select photo</button>
             <button className="quiet-button" type="button" onClick={props.onReset}>Reset</button>
             <button className="quiet-button" type="button" onClick={props.onClearDraft}>Discard draft</button>
-            <button className="primary-button" type="button" onClick={props.onExport}>Export edited copy</button>
+            <button className="quiet-button" type="button" onClick={props.onSaveDraft}>Save</button>
+            <button className="primary-button" type="button" onClick={props.onExport}>Save copy</button>
           </div>
         </aside>
       </div>

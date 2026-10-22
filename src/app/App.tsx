@@ -2883,14 +2883,6 @@ function EditScreen(props: any) {
               <input type="range" min={-80} max={80} value={values[key]} onChange={(e) => props.onSetValue(key, Number(e.target.value))} />
             </label>
           ))}
-          {props.crop?.enabled && (
-            <div className="crop-controls">
-              <label className="slider-control"><span>X<b>{Math.round((props.crop.x||0)*100)}%</b></span><input type="range" min={0} max={80} value={(props.crop.x||0)*100} onChange={(e)=>props.onSetCrop({ x: Number(e.target.value)/100 })} /></label>
-              <label className="slider-control"><span>Y<b>{Math.round((props.crop.y||0)*100)}%</b></span><input type="range" min={0} max={80} value={(props.crop.y||0)*100} onChange={(e)=>props.onSetCrop({ y: Number(e.target.value)/100 })} /></label>
-              <label className="slider-control"><span>Width<b>{Math.round((props.crop.width||1)*100)}%</b></span><input type="range" min={20} max={100} value={(props.crop.width||1)*100} onChange={(e)=>props.onSetCrop({ width: Number(e.target.value)/100 })} /></label>
-              <label className="slider-control"><span>Height<b>{Math.round((props.crop.height||1)*100)}%</b></span><input type="range" min={20} max={100} value={(props.crop.height||1)*100} onChange={(e)=>props.onSetCrop({ height: Number(e.target.value)/100 })} /></label>
-            </div>
-          )}
           <div className="edit-footer">
             <button className="quiet-button" type="button" onClick={props.onReset}>Reset</button>
             <button className="quiet-button" type="button" onClick={props.onClearDraft}>Discard draft</button>

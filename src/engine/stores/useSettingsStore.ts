@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from "react";
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { AppSettings } from "../types/settings";
@@ -159,11 +160,22 @@ function mixColors(hex: string, mixTo: string, ratio: number): string {
   return `rgb(${Math.round(r1 + (r2 - r1) * ratio)}, ${Math.round(g1 + (g2 - g1) * ratio)}, ${Math.round(b1 + (b2 - b1) * ratio)})`;
 }
 
-// Whether the OS is currently in dark mode. Exposed as a selector so callers
-// only have to subscribe to the resolved value.
-export function useSystemDark(): boolean {
-  if (typeof window === "undefined") return false;
+// Whether the OS is currently in dark mode. A real subscription so changing
+// the system appearance re-renders "system" followers live.
+function subscribeSystemDark(onChange: () => void): () => void {
+  if (typeof window === "undefined" || !window.matchMedia) return () => {};
+  const query = window.matchMedia("(prefers-color-scheme: dark)");
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+}
+
+function getSystemDark(): boolean {
+  if (typeof window === "undefined" || !window.matchMedia) return false;
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+export function useSystemDark(): boolean {
+  return useSyncExternalStore(subscribeSystemDark, getSystemDark, () => false);
 }
 
 // Listen for system theme changes so a "system" choice follows the OS.

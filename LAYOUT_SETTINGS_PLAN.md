@@ -1,8 +1,19 @@
 # Layout, Theming & Settings — Analysis and Fix Plan
 
-Status: **plan only** — no source files have been modified.
-Baseline: branch `fix/layout-polish` @ `2b94e9e`, working tree clean
-(`.gitignore` untouched). `npm run typecheck` and `cargo check` both pass at HEAD.
+Status: **implemented** — the defects below are fixed on `fix/layout-polish`.
+Baseline for the audit: `2b94e9e`, working tree clean (`.gitignore` untouched).
+`npm run typecheck`, `npm run build` and `cargo check` pass after the changes.
+
+Implementation notes:
+- Appearance is owned by the always-mounted `App.tsx`; `SettingsScreen` no
+  longer applies or hydrates settings. `hydrate()` runs at app startup.
+- The accent indirection is `--accent` -> `--blue`/`--blue-soft`, with a JS
+  `--accent-soft` fallback for WebKit builds without `color-mix`.
+- "Clear Cache Now" was replaced with "Rebuild Library" (the existing scan
+  path), since there is still no thumbnail cache to clear.
+- `delete_library_database` is exposed as `tauri.library.deleteDatabase()`.
+- Remaining section-5 checks that need a native window (OS theme changes,
+  restart persistence, destructive actions) should be run in `tauri:dev`.
 
 This document records the defects found while auditing the app chrome, the
 settings pipeline, and the backend settings contract, plus the ordered plan to

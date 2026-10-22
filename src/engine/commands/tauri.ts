@@ -51,6 +51,9 @@ export const tauri = {
 
     removeFolder: (path: string, deleteFiles = false): Promise<number> =>
       invoke("remove_library_folder", { path, deleteFiles }),
+
+    deleteDatabase: (): Promise<void> =>
+      invoke("delete_library_database"),
   },
 
   items: {
@@ -153,9 +156,6 @@ export const tauri = {
 
     save: (settings: Partial<AppSettings>): Promise<AppSettings> =>
       invoke("save_settings", { settings }),
-
-    deleteDatabase: (): Promise<void> =>
-      invoke("delete_library_database"),
   },
 
   app: {

@@ -481,10 +481,18 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Pull the authoritative settings from SQLite once at startup so the app
+  // chrome (appearance, accent, sidebar width) is correct even if the user
+  // never opens Settings.
+  const hydrateSettings = useSettingsStore((s) => s.hydrate);
+  useEffect(() => {
+    void hydrateSettings();
+  }, [hydrateSettings]);
 
-
-  // Keep the native window chrome (traffic lights / window background) in sync
-  // with the in-app appearance, so the title bar never looks "always light".
+  // Keep the in-app theme and the native window chrome (traffic lights /
+  // window background) in sync with the resolved appearance. This lives here
+  // (always mounted) rather than in Settings so closing Settings never leaves
+  // the app frame on a stale theme.
   useEffect(() => {
     let cancelled = false;
     (async () => {

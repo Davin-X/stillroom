@@ -71,7 +71,7 @@ body {
 
 .app-body {
   display: grid;
-  grid-template-columns: minmax(200px, 220px) minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width, 220px) minmax(0, 1fr);
   flex: 1;
   min-height: 0;
   min-width: 0;
@@ -2204,7 +2204,7 @@ body {
 
 /* Sidebar */
 .app-body.sidebar-open {
-  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width, 220px) minmax(0, 1fr);
 }
 
 .app-body.sidebar-closed {
@@ -3539,9 +3539,9 @@ body {
 /* Responsive */
 @media (max-width: 1100px) {
   .app-body {
-    /* Keep the full sidebar width: the stats rows need it for counts in the
-       thousands plus their size, and the main pane can spare 20px. */
-    grid-template-columns: 220px minmax(0, 1fr);
+    /* Keep whatever width the Sidebar Width setting chose; the main pane can
+       spare the difference. */
+    grid-template-columns: var(--sidebar-width, 220px) minmax(0, 1fr);
   }
   .library-layout.with-inspector {
     grid-template-columns: minmax(0, 1fr) 260px;

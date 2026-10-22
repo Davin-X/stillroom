@@ -79,8 +79,14 @@
 }
 
 .app-frame .danger-button {
-  border-color: var(--danger-line);
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--danger-line);
+  border-radius: 6px;
+  background: transparent;
   color: var(--danger);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .app-frame .danger-button:hover:not(:disabled) {

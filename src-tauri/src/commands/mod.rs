@@ -1237,66 +1237,84 @@ pub async fn read_finder_tags(path: String, state: State<'_, AppState>) -> Resul
     Ok(vec![])
 }
 
+/// Apply a single persisted (key, value) pair onto an `AppSettings` struct.
+/// Shared by `get_settings` and `save_settings` so the parse contract lives in
+/// one place. Unknown keys are ignored gracefully.
+fn apply_setting(settings: &mut AppSettings, key: &str, value: &str) {
+    match key {
+        "appearance" => settings.appearance = value.to_string(),
+        "accent_color" => settings.accent_color = value.to_string(),
+        "sidebar_width" => settings.sidebar_width = value.parse().unwrap_or(220),
+        "show_extensions" => settings.show_extensions = value.parse().unwrap_or(false),
+        "animate_transitions" => settings.animate_transitions = value.parse().unwrap_or(true),
+        "startup_view" => settings.startup_view = value.to_string(),
+        "open_last_folder" => settings.open_last_folder = value.parse().unwrap_or(true),
+        "restore_window_state" => settings.restore_window_state = value.parse().unwrap_or(true),
+        "default_layout" => settings.default_layout = value.to_string(),
+        "thumbnail_size" => settings.thumbnail_size = value.to_string(),
+        "viewer_zoom_behavior" => settings.viewer_zoom_behavior = value.to_string(),
+        "slideshow_interval" => settings.slideshow_interval = value.parse().unwrap_or(5),
+        "slideshow_shuffle" => settings.slideshow_shuffle = value.parse().unwrap_or(false),
+        "slideshow_loop" => settings.slideshow_loop = value.parse().unwrap_or(true),
+        "video_auto_play" => settings.video_auto_play = value.parse().unwrap_or(true),
+        "video_loop" => settings.video_loop = value.parse().unwrap_or(false),
+        "watch_folders" => {
+            settings.watch_folders = serde_json::from_str(&value).unwrap_or_default();
+        }
+        "auto_import" => settings.auto_import = value.parse().unwrap_or(false),
+        "pair_raw_jpeg" => settings.pair_raw_jpeg = value.parse().unwrap_or(true),
+        "stack_bursts" => settings.stack_bursts = value.parse().unwrap_or(true),
+        "stack_live_photos" => settings.stack_live_photos = value.parse().unwrap_or(true),
+        "vault_enabled" => settings.vault_enabled = value.parse().unwrap_or(false),
+        "vault_unlock_method" => settings.vault_unlock_method = value.to_string(),
+        "vault_auto_lock_minutes" => settings.vault_auto_lock_minutes = value.parse().unwrap_or(5),
+        "vault_lock_on_sleep" => settings.vault_lock_on_sleep = value.parse().unwrap_or(true),
+        "strip_gps_on_export" => settings.strip_gps_on_export = value.parse().unwrap_or(true),
+        "strip_all_metadata_on_export" => settings.strip_all_metadata_on_export = value.parse().unwrap_or(false),
+        "allow_network_requests" => settings.allow_network_requests = value.parse().unwrap_or(false),
+        "send_crash_reports" => settings.send_crash_reports = value.parse().unwrap_or(false),
+        "max_cache_size_gb" => settings.max_cache_size_gb = value.parse().unwrap_or(5),
+        "thumbnail_quality" => settings.thumbnail_quality = value.parse().unwrap_or(80),
+        "enable_debug_logging" => settings.enable_debug_logging = value.parse().unwrap_or(false),
+        "show_native_limit_warnings" => settings.show_native_limit_warnings = value.parse().unwrap_or(true),
+        _ => {}
+    }
+}
+
 #[tauri::command]
 pub async fn get_settings(state: State<'_, AppState>) -> Result<AppSettings, String> {
     let db = get_db(&state)?;
+    Ok(load_persisted_settings(&db).await?)
+}
+
+/// Load the full set of persisted settings rows from the `settings` table into
+/// an `AppSettings`, starting from `AppSettings::default()` for any keys not
+/// yet stored. Shared by `get_settings` and `save_settings` so the read contract
+/// lives in one place and a partial save can merge onto the *real* persisted
+/// state instead of `AppSettings::default()`.
+async fn load_persisted_settings(db: &SqlitePool) -> Result<AppSettings, String> {
     let rows = sqlx::query("SELECT key, value FROM settings")
-        .fetch_all(&db)
+        .fetch_all(db)
         .await
         .map_err(|e| e.to_string())?;
     let mut settings = AppSettings::default();
     for row in rows {
         let key: String = row.get("key");
         let value: String = row.get("value");
-        match key.as_str() {
-            "appearance" => settings.appearance = value,
-            "accent_color" => settings.accent_color = value,
-            "sidebar_width" => settings.sidebar_width = value.parse().unwrap_or(220),
-            "show_extensions" => settings.show_extensions = value.parse().unwrap_or(false),
-            "animate_transitions" => settings.animate_transitions = value.parse().unwrap_or(true),
-            "startup_view" => settings.startup_view = value,
-            "open_last_folder" => settings.open_last_folder = value.parse().unwrap_or(true),
-            "restore_window_state" => settings.restore_window_state = value.parse().unwrap_or(true),
-            "default_layout" => settings.default_layout = value,
-            "thumbnail_size" => settings.thumbnail_size = value,
-            "viewer_zoom_behavior" => settings.viewer_zoom_behavior = value,
-            "slideshow_interval" => settings.slideshow_interval = value.parse().unwrap_or(5),
-            "slideshow_shuffle" => settings.slideshow_shuffle = value.parse().unwrap_or(false),
-            "slideshow_loop" => settings.slideshow_loop = value.parse().unwrap_or(true),
-            "video_auto_play" => settings.video_auto_play = value.parse().unwrap_or(true),
-            "video_loop" => settings.video_loop = value.parse().unwrap_or(false),
-            "watch_folders" => {
-                settings.watch_folders = serde_json::from_str(&value).unwrap_or_default();
-            }
-            "auto_import" => settings.auto_import = value.parse().unwrap_or(false),
-            "pair_raw_jpeg" => settings.pair_raw_jpeg = value.parse().unwrap_or(true),
-            "stack_bursts" => settings.stack_bursts = value.parse().unwrap_or(true),
-            "stack_live_photos" => settings.stack_live_photos = value.parse().unwrap_or(true),
-            "vault_enabled" => settings.vault_enabled = value.parse().unwrap_or(false),
-            "vault_unlock_method" => settings.vault_unlock_method = value,
-            "vault_auto_lock_minutes" => settings.vault_auto_lock_minutes = value.parse().unwrap_or(5),
-            "vault_lock_on_sleep" => settings.vault_lock_on_sleep = value.parse().unwrap_or(true),
-            "strip_gps_on_export" => settings.strip_gps_on_export = value.parse().unwrap_or(true),
-            "strip_all_metadata_on_export" => settings.strip_all_metadata_on_export = value.parse().unwrap_or(false),
-            "allow_network_requests" => settings.allow_network_requests = value.parse().unwrap_or(false),
-            "send_crash_reports" => settings.send_crash_reports = value.parse().unwrap_or(false),
-            "max_cache_size_gb" => settings.max_cache_size_gb = value.parse().unwrap_or(5),
-            "thumbnail_quality" => settings.thumbnail_quality = value.parse().unwrap_or(80),
-            "enable_debug_logging" => settings.enable_debug_logging = value.parse().unwrap_or(false),
-            "show_native_limit_warnings" => settings.show_native_limit_warnings = value.parse().unwrap_or(true),
-            _ => {}
-        }
+        apply_setting(&mut settings, &key, &value);
     }
     Ok(settings)
 }
 
 #[tauri::command]
-pub async fn save_settings(settings: PartialSettings, state: State<'_, AppState>) -> Result<AppSettings, String> {
+pub async fn save_settings(patch: PartialSettings, state: State<'_, AppState>) -> Result<AppSettings, String> {
     let db = get_db(&state)?;
-    // Move the incoming patch aside so the merged result can keep the `settings`
-    // name below.
-    let patch = settings;
-    let mut settings = AppSettings::default();
+    // Start from the SETTINGS CURRENTLY PERSISTED, then apply the incoming
+    // patch on top. Previously this began from `AppSettings::default()`, which
+    // silently reset every key NOT present in a partial patch to its default and
+    // wrote those defaults back to disk — the root cause of settings "resetting"
+    // on each save.
+    let mut settings = load_persisted_settings(&db).await?;
     if let Some(v) = patch.appearance { settings.appearance = v; }
     if let Some(v) = patch.accent_color { settings.accent_color = v; }
     if let Some(v) = patch.sidebar_width { settings.sidebar_width = v; }

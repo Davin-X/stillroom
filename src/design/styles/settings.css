@@ -82,8 +82,13 @@
 }
 
 .settings-tab.active {
-  color: var(--blue);
-  border-bottom-color: var(--blue);
+  /* Label uses a high-contrast text token rather than the accent color.
+     Some accent colors (red, orange, green, blue) fail WCAG contrast against
+     both light and dark backgrounds when used as body text — this makes the
+     active tab label unreadable in light mode as well as dark. The accent is
+     kept only as the 2px bottom border, which is the tab's active indicator. */
+  color: var(--ink);
+  border-bottom-color: var(--accent-text);
 }
 
 .settings-tab:focus-visible {
@@ -276,24 +281,58 @@
 /* Accent Color Picker */
 .accent-picker {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
+/* Each option is a vertical stack: a color chip with the accent name printed
+   underneath, so the accent choices are readable instead of being unlabeled
+   colored squares. */
 .accent-option {
-  width: 32px;
-  height: 32px;
-  border: 2px solid transparent;
-  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 2px;
+  border: 0;
+  background: transparent;
   cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition: transform 0.15s ease;
 }
 
 .accent-option:hover {
-  transform: scale(1.1);
+  transform: translateY(-1px);
 }
 
-.accent-option.selected {
+.accent-swatch {
+  display: block;
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.app-frame.dark .accent-swatch {
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+/* The name under the chip. Uses the standard text tokens so it is readable
+   regardless of which accent is selected. */
+.accent-name {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.accent-option.selected .accent-name {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.accent-option.selected .accent-swatch {
   /* Ring in the live accent so the selection reads as "this is the chosen
      accent", not as another border. */
   border-color: var(--surface);
@@ -303,6 +342,7 @@
 .accent-option:focus-visible {
   outline: 2px solid var(--blue);
   outline-offset: 2px;
+  border-radius: 8px;
 }
 
 /* Slider */
@@ -558,7 +598,7 @@
 .context-menu-item:hover,
 .context-menu-item:focus-visible {
   background: var(--blue-soft);
-  color: var(--blue);
+  color: var(--accent-text);
   outline: none;
 }
 
@@ -668,7 +708,7 @@
 .app-frame.dark .context-menu-item:hover,
 .app-frame.dark .context-menu-item:focus-visible {
   background: var(--blue-soft);
-  color: var(--blue);
+  color: var(--accent-text);
 }
 
 .app-frame.dark .context-menu-item.danger:hover {
@@ -821,7 +861,7 @@
 }
 
 .sources-path:hover {
-  color: var(--blue);
+  color: var(--accent-text);
   text-decoration: underline;
 }
 
@@ -978,10 +1018,10 @@
   }
 
   .accent-picker {
-    gap: 6px;
+    gap: 8px;
   }
 
-  .accent-option {
+  .accent-swatch {
     width: 28px;
     height: 28px;
   }

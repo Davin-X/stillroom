@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { useSettingsStore, useAppearance, useAccentColor, useSidebarWidth, useDefaultLayout, useLibraryStore } from "../../engine/stores";
+import { useSettingsStore, useAppearance, useAccentColor, useSidebarWidth, useDefaultLayout, useLibraryStore, useSystemDark, ACCENT_PALETTE } from "../../engine/stores";
 import { tauri } from "../../engine/commands/tauri";
 import type { LibraryFolder } from "../../engine/types/commands";
 import { SourcesManager } from "./SourcesManager";
@@ -13,15 +13,6 @@ const TABS: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
   { id: "library", label: "Library", icon: <FolderIcon size={15} /> },
   { id: "privacy", label: "Privacy & Security", icon: <ShieldIcon size={15} /> },
   { id: "advanced", label: "Advanced", icon: <CpuIcon size={15} /> },
-];
-
-const ACCENT_COLORS: { id: string; label: string; color: string }[] = [
-  { id: "blue", label: "Blue", color: "#3474d4" },
-  { id: "purple", label: "Purple", color: "#8b5cf6" },
-  { id: "green", label: "Green", color: "#27845f" },
-  { id: "orange", label: "Orange", color: "#ea7a1a" },
-  { id: "pink", label: "Pink", color: "#db2777" },
-  { id: "red", label: "Red", color: "#dc2626" },
 ];
 
 const LAYOUT_OPTIONS = [
@@ -62,6 +53,10 @@ export function SettingsScreen(props: {
   // Settings values
   const appearance = useAppearance();
   const accentColor = useAccentColor();
+  // Which accent variant (light/dark) is live, so the swatches preview the
+  // color that will actually be applied.
+  const systemDark = useSystemDark();
+  const isDark = appearance === "dark" || (appearance === "system" && systemDark);
   const defaultLayout = useDefaultLayout();
   const vaultEnabled = useSettingsStore((s) => s.vaultEnabled);
   const vaultAutoLock = useSettingsStore((s) => s.vaultAutoLockMinutes);
@@ -200,17 +195,27 @@ export function SettingsScreen(props: {
 
   const renderAccentPicker = (value: string, onChange: (v: string) => void) => (
     <div className="accent-picker" role="radiogroup" aria-label="Accent color">
-      {ACCENT_COLORS.map((c) => (
-        <button
-          key={c.id}
-          type="button"
-          className={`accent-option ${value === c.id ? "selected" : ""}`}
-          style={{ background: c.color }}
-          onClick={() => onChange(c.id)}
-          aria-label={c.label}
-          aria-pressed={value === c.id}
-        />
-      ))}
+      {ACCENT_PALETTE.map((c) => {
+        const selected = value === c.id;
+        return (
+          <button
+            key={c.id}
+            type="button"
+            className={`accent-option ${selected ? "selected" : ""}`}
+            onClick={() => onChange(c.id)}
+            aria-label={c.label}
+            aria-pressed={selected}
+            title={c.label}
+          >
+            <span
+              className="accent-swatch"
+              style={{ background: isDark ? c.dark : c.light }}
+              aria-hidden="true"
+            />
+            <span className="accent-name">{c.label}</span>
+          </button>
+        );
+      })}
     </div>
   );
 

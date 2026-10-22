@@ -1392,6 +1392,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             onRemoveItems={vault.removeItems}
             onToggleEnabled={(e: any) => vault.toggleEnabled(e)}
             onSetAutoLock={(m: any) => vault.setAutoLock(m)}
+            onSetPassword={(pwd: string) => { tauri.vault.setPassword(pwd).catch(console.error); }}
             onNavigate={setScreen}
             onCreateAlbum={openAlbumDialog}
             notice={showNotice}
@@ -3200,6 +3201,9 @@ function VaultScreen(props: any) {
             />
             <button className="quiet-button" type="button" onClick={() => { props.onUnlock(password, false); setPassword(""); }}>
               Unlock
+            </button>
+            <button className="quiet-button" type="button" onClick={() => { props.onSetPassword?.(password); setPassword(""); }}>
+              Set password
             </button>
           </div>
           <small>Or use password</small>

@@ -2856,7 +2856,17 @@ function EditScreen(props: any) {
           <input className="search-input" placeholder="Search photos..." value={pickerQuery} onChange={(e) => setPickerQuery(e.target.value)} style={{ flex: 1 }} />
           <button className="quiet-button" type="button" onClick={browse}>Browse from Finder…</button>
         </div>
-        {filtered.length>0 ? (<div className="edit-picker-grid">{filtered.map((item:any)=>(<button key={item.id} type="button" className="edit-picker-tile" onClick={()=>props.onOpenEdit?.(item)}><img src={props.assetUrl(item.path)} alt={item.name}/><span>{item.name}</span></button>))}</div>) : (<div className="viewer-empty-state"><div style={{ marginBottom: 16 }}><BrandMark size={56} /></div><h2>No photos found</h2><p>Import a folder or browse from disk.</p></div>) }
+        {filtered.length>0 ? (<div className="edit-picker-grid">{filtered.map((item:any)=> {
+  const hasDraft = (() => { try { return !!localStorage.getItem(`edit:draft:${item.id}`); } catch { return false; } })();
+  return (
+    <button key={item.id} type="button" className="edit-picker-tile" onClick={()=>props.onOpenEdit?.(item)}>
+      <img src={props.assetUrl(item.path)} alt={item.name}/>
+      <span>{item.name}</span>
+      {hasDraft && <span className="draft-badge">Draft</span>}
+      {hasDraft && <span className="draft-remove" onClick={(e) => { e.stopPropagation(); try { localStorage.removeItem(`edit:draft:${item.id}`); } catch {} props.onNotice?.("Draft removed"); }} title="Remove draft">×</span>}
+    </button>
+  );
+})}</div>) : (<div className="viewer-empty-state"><div style={{ marginBottom: 16 }}><BrandMark size={56} /></div><h2>No photos found</h2><p>Import a folder or browse from disk.</p></div>) }
       </div>
     );
   }

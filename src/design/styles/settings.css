@@ -551,7 +551,7 @@
 .toggle-track::after {
   content: "";
   position: absolute;
-  top: 2px;
+  top: 50%;
   left: 2px;
   width: 26px;
   height: 26px;
@@ -560,6 +560,7 @@
   border: 1px solid rgba(0, 0, 0, 0.12);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22), 0 1px 0 rgba(0, 0, 0, 0.08);
   transition: transform 0.22s cubic-bezier(0.3, 1, 0.7, 1);
+  transform: translateY(-50%);
 }
 
 .toggle-switch input:checked + .toggle-track {
@@ -568,7 +569,7 @@
 }
 
 .toggle-switch input:checked + .toggle-track::after {
-  transform: translateX(22px);
+  transform: translate(22px, -50%);
 }
 
 .toggle-switch input:disabled + .toggle-track {

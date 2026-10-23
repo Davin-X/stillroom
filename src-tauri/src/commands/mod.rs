@@ -353,24 +353,20 @@ fn kind_for_ext(ext: &str) -> &'static str {
     else { "photo" }
 }
 
-/// Add one file to the catalog and return it with its on-disk size.
-///
-/// Folder scans and direct file imports share this so both paths keep the same
-/// stable id and the same conflict rules (favorite/hidden state wins over a
-/// refreshed file fact).
-async fn import_media_file(
-    db: &SqlitePool,
+/// Read file facts needed by the catalog without decoding the image payload.
+/// Folder scans and direct imports share this inspection path.
+fn inspect_media_file(
     path: &Path,
     now: i64,
-) -> Result<Option<(MediaItem, i64)>, String> {
+) -> Option<(MediaItem, Option<i32>, Option<i32>)> {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
     if !is_media_file(&ext) {
-        return Ok(None);
+        return None;
     }
 
     let metadata = match std::fs::metadata(path) {
         Ok(metadata) if metadata.is_file() => metadata,
-        _ => return Ok(None),
+        _ => return None,
     };
 
     let size = metadata.len() as i64;
@@ -392,7 +388,7 @@ async fn import_media_file(
         (None, None)
     };
 
-    let item = MediaItem::new(
+    let mut item = MediaItem::new(
         path.to_string_lossy().to_string(),
         name,
         ext,
@@ -400,42 +396,67 @@ async fn import_media_file(
         size,
         modified_at,
     );
+    item.created_at = now;
+    item.updated_at = now;
 
     // Upsert on the stable id. `favorite` and `hidden` are left out of the
     // UPDATE clause so a re-import refreshes file facts without discarding the
     // user's own state.
-    sqlx::query(
-        r#"INSERT INTO media_items
-           (id, path, name, extension, kind, size, modified_at, captured_at,
-            width, height, created_at, updated_at, favorite, hidden)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
-           ON CONFLICT(id) DO UPDATE SET
-               path = excluded.path,
-               name = excluded.name,
-               extension = excluded.extension,
-               kind = excluded.kind,
-               size = excluded.size,
-               modified_at = excluded.modified_at,
-               width = excluded.width,
-               height = excluded.height,
-               updated_at = excluded.updated_at"#,
-    )
-    .bind(&item.id)
-    .bind(&item.path)
-    .bind(&item.name)
-    .bind(&item.extension)
-    .bind(&item.kind)
-    .bind(item.size)
-    .bind(item.modified_at)
-    .bind(item.captured_at)
-    .bind(width)
-    .bind(height)
-    .bind(now)
-    .bind(now)
-    .execute(db)
-    .await
-    .map_err(|e| e.to_string())?;
+    Some((item, width, height))
+}
 
+/// Upsert a bounded group of inspected files in one SQLite statement. Batches
+/// stay below SQLite's parameter limit while avoiding one IPC/database round
+/// trip per file during a large folder scan.
+async fn upsert_media_batch(
+    db: &SqlitePool,
+    rows: &[(MediaItem, Option<i32>, Option<i32>)],
+) -> Result<(), String> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+
+    let mut query = QueryBuilder::<Sqlite>::new(
+        "INSERT INTO media_items (id, path, name, extension, kind, size, modified_at, captured_at, width, height, created_at, updated_at, favorite, hidden) ",
+    );
+    query.push_values(rows, |mut values, (item, width, height)| {
+        values
+            .push_bind(&item.id)
+            .push_bind(&item.path)
+            .push_bind(&item.name)
+            .push_bind(&item.extension)
+            .push_bind(&item.kind)
+            .push_bind(item.size)
+            .push_bind(item.modified_at)
+            .push_bind(item.captured_at)
+            .push_bind(width)
+            .push_bind(height)
+            .push_bind(item.created_at)
+            .push_bind(item.updated_at)
+            .push_bind(0i32)
+            .push_bind(0i32);
+    });
+    query.push(
+        " ON CONFLICT(id) DO UPDATE SET path = excluded.path, name = excluded.name, extension = excluded.extension, kind = excluded.kind, size = excluded.size, modified_at = excluded.modified_at, width = excluded.width, height = excluded.height, updated_at = excluded.updated_at",
+    );
+    query
+        .build()
+        .execute(db)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+async fn import_media_file(
+    db: &SqlitePool,
+    path: &Path,
+    now: i64,
+) -> Result<Option<(MediaItem, i64)>, String> {
+    let Some((item, width, height)) = inspect_media_file(path, now) else {
+        return Ok(None);
+    };
+    let size = item.size;
+    upsert_media_batch(db, &[(item.clone(), width, height)]).await?;
     Ok(Some((item, size)))
 }
 
@@ -457,8 +478,9 @@ pub async fn scan_library(
     let db = get_db(&state)?;
     let now = now_ms();
 
-    // First pass: count total media files so we can report a total.
-    let total: u64 = WalkDir::new(&root)
+    // Discover the media paths once. Keeping only paths avoids retaining the
+    // walker's directory entries while still giving the progress UI a total.
+    let media_paths: Vec<PathBuf> = WalkDir::new(&root)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
@@ -470,29 +492,32 @@ pub async fn scan_library(
                 .to_lowercase();
             is_media_file(&ext)
         })
-        .count() as u64;
+        .map(|entry| entry.into_path())
+        .collect();
+    let total = media_paths.len() as u64;
 
-    // Second pass: import each file, emitting progress along the way.
-    for entry in WalkDir::new(&root).into_iter().filter_map(|e| e.ok()) {
-        if !entry.file_type().is_file() {
-            continue;
-        }
-        if let Some((item, size)) = import_media_file(&db, entry.path(), now).await? {
-            total_size += size;
-            items.push(item);
-        }
+    // Inspect and write in bounded chunks to avoid a SQL request per file.
+    const SCAN_BATCH_SIZE: usize = 100;
+    for paths in media_paths.chunks(SCAN_BATCH_SIZE) {
+        let batch: Vec<_> = paths
+            .iter()
+            .filter_map(|path| inspect_media_file(path, now))
+            .collect();
+        total_size += batch.iter().map(|(item, _, _)| item.size).sum::<i64>();
+        items.extend(batch.iter().map(|(item, _, _)| item.clone()));
+        upsert_media_batch(&db, &batch).await?;
+        processed += paths.len() as u64;
 
-        processed += 1;
-        // Emit progress every 200 files or on the last file to avoid
-        // overwhelming the IPC channel while still keeping the UI responsive.
-        if processed % 200 == 0 || processed == total {
+        // Emit progress every two batches or on the last batch.
+        if processed % 200 < SCAN_BATCH_SIZE as u64 || processed == total {
+            let current_file = paths.last().map(|path| path.to_string_lossy().to_string()).unwrap_or_default();
             let _ = window.emit(
                 "import-progress",
                 json!({
                     "phase": "scanning",
                     "processed": processed,
                     "total": total,
-                    "currentFile": entry.path().to_string_lossy().to_string(),
+                    "currentFile": current_file,
                 }),
             );
             // Yield to the Tauri event loop so progress events are delivered
@@ -1854,6 +1879,7 @@ pub async fn save_file(path: String, bytes: Vec<u8>) -> Result<(), String> {
 #[cfg(test)]
 mod batch_export_tests {
     use super::*;
+    use sqlx::sqlite::SqlitePoolOptions;
 
     fn temp_dir(label: &str) -> PathBuf {
         let path = std::env::temp_dir().join(format!(
@@ -1863,6 +1889,104 @@ mod batch_export_tests {
         ));
         std::fs::create_dir_all(&path).expect("create temp dir");
         path
+    }
+
+    async fn perf_db() -> SqlitePool {
+        let db = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("open in-memory perf database");
+        sqlx::query(
+            "CREATE TABLE media_items (id TEXT PRIMARY KEY, path TEXT NOT NULL UNIQUE, name TEXT NOT NULL, extension TEXT NOT NULL, kind TEXT NOT NULL, size INTEGER NOT NULL, modified_at INTEGER NOT NULL, captured_at INTEGER, width INTEGER, height INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, favorite INTEGER DEFAULT 0, hidden INTEGER DEFAULT 0)",
+        )
+        .execute(&db)
+        .await
+        .expect("create perf table");
+        db
+    }
+
+    /// Manual microbenchmark of the real media inspection and SQLite write
+    /// paths against a generated library. Run with:
+    /// `cargo test scan_performance_benchmark -- --ignored --nocapture`
+    #[tokio::test]
+    #[ignore = "manual synthetic performance benchmark"]
+    async fn scan_performance_benchmark() {
+        const FILES: usize = 10_000;
+        const BATCH: usize = 100;
+        let root = temp_dir("scan-perf");
+        let seed = root.join("seed.png");
+        image::RgbaImage::from_pixel(8, 8, image::Rgba([80, 120, 160, 255]))
+            .save(&seed)
+            .expect("write seed image");
+        for index in 0..FILES {
+            std::fs::copy(&seed, root.join(format!("image-{index:05}.png")))
+                .expect("generate synthetic image");
+        }
+        std::fs::remove_file(seed).ok();
+        // Exercise large-file size handling without allocating gigabytes on
+        // disk or needing a codec-specific video sample.
+        let large_video = root.join("large-video.mp4");
+        std::fs::File::create(&large_video)
+            .and_then(|file| file.set_len(2 * 1024 * 1024 * 1024))
+            .expect("create sparse 2 GiB video fixture");
+
+        let paths: Vec<PathBuf> = WalkDir::new(&root)
+            .into_iter()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_type().is_file())
+            .map(|entry| entry.into_path())
+            .collect();
+        assert_eq!(paths.len(), FILES + 1);
+        let now = now_ms();
+
+        let legacy_db = perf_db().await;
+        let legacy_start = std::time::Instant::now();
+        for path in &paths {
+            if let Some(row) = inspect_media_file(path, now) {
+                upsert_media_batch(&legacy_db, std::slice::from_ref(&row))
+                    .await
+                    .expect("legacy per-file upsert");
+            }
+        }
+        let legacy_elapsed = legacy_start.elapsed();
+
+        let batch_db = perf_db().await;
+        let batch_start = std::time::Instant::now();
+        for chunk in paths.chunks(BATCH) {
+            let rows: Vec<_> = chunk
+                .iter()
+                .filter_map(|path| inspect_media_file(path, now))
+                .collect();
+            upsert_media_batch(&batch_db, &rows)
+                .await
+                .expect("batched upsert");
+        }
+        let batch_elapsed = batch_start.elapsed();
+
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM media_items")
+            .fetch_one(&batch_db)
+            .await
+            .expect("count imported media");
+        assert_eq!(count, (FILES + 1) as i64);
+        let large_video_size: i64 = sqlx::query_scalar(
+            "SELECT size FROM media_items WHERE path = ?",
+        )
+        .bind(large_video.to_string_lossy().as_ref())
+        .fetch_one(&batch_db)
+        .await
+        .expect("read large video size");
+        assert_eq!(large_video_size, 2 * 1024 * 1024 * 1024);
+        println!(
+            "Synthetic scan {FILES} PNGs (8x8) + sparse 2 GiB MP4: per-file writes {:.2}s; batches of {BATCH}: {:.2}s; speedup {:.2}x",
+            legacy_elapsed.as_secs_f64(),
+            batch_elapsed.as_secs_f64(),
+            legacy_elapsed.as_secs_f64() / batch_elapsed.as_secs_f64()
+        );
+
+        legacy_db.close().await;
+        batch_db.close().await;
+        std::fs::remove_dir_all(root).ok();
     }
 
     fn test_item(source: &Path) -> BatchExportItem {

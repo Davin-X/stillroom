@@ -2620,11 +2620,12 @@ function LibraryScreen(props: any) {
     if (el.scrollHeight - el.scrollTop - el.clientHeight < 800) loadMore();
   };
 
-  const renderedItems = props.items.slice(0, renderLimit);
+  const renderedItems = useMemo(() => props.items.slice(0, renderLimit), [props.items, renderLimit]);
+  const selectedIdSet = useMemo(() => new Set(props.selectedIds), [props.selectedIds]);
 
   // Timeline groups use the photo's capture date when available, with file
   // modification time as a reliable fallback for screenshots and videos.
-  const timelineGroups: { key: string; label: string; items: any[]; count: number }[] = props.layout === "timeline"
+  const timelineGroups: { key: string; label: string; items: any[]; count: number }[] = useMemo(() => props.layout === "timeline"
     ? (() => {
         const grouped = new Map<string, { timestamp: number; items: any[] }>();
         for (const item of props.items) {
@@ -2645,11 +2646,23 @@ function LibraryScreen(props: any) {
             count: group.items.length,
           }));
       })()
-    : [];
-  const renderedTimelineIds = new Set(renderedItems.map((item: any) => item.id));
-  const visibleTimelineGroups = timelineGroups
-    .map((group) => ({ ...group, items: group.items.filter((item: any) => renderedTimelineIds.has(item.id)) }))
-    .filter((group) => group.items.length > 0);
+    : [], [props.items, props.layout]);
+  const visibleTimelineGroups = useMemo(() => {
+    if (!timelineGroups.length) return [];
+    const visibleItemsByMonth = new Map<string, any[]>();
+    for (const item of renderedItems) {
+      const timestamp = item.capturedAt ?? item.modifiedAt;
+      const date = new Date(timestamp);
+      const key = `${date.getFullYear()}-${date.getMonth()}`;
+      const items = visibleItemsByMonth.get(key) ?? [];
+      items.push(item);
+      visibleItemsByMonth.set(key, items);
+    }
+    return timelineGroups.flatMap((group) => {
+      const visibleItems = visibleItemsByMonth.get(group.key);
+      return visibleItems?.length ? [{ ...group, visibleItems }] : [];
+    });
+  }, [renderedItems, timelineGroups]);
 
   const captureDate = (item: any) => item.capturedAt ?? item.modifiedAt;
   const sortDetailsBy = (sortBy: typeof library.sortBy) => {
@@ -2667,7 +2680,7 @@ function LibraryScreen(props: any) {
   const toggleTimelineGroup = (items: any[]) => {
     const groupIds = items.map((item) => item.id);
     const groupIdSet = new Set(groupIds);
-    const allSelected = groupIds.length > 0 && groupIds.every((id) => props.selectedIds.includes(id));
+    const allSelected = groupIds.length > 0 && groupIds.every((id) => selectedIdSet.has(id));
     const next = allSelected
       ? props.selectedIds.filter((id: string) => !groupIdSet.has(id))
       : [...new Set([...props.selectedIds, ...groupIds])];
@@ -2703,7 +2716,7 @@ function LibraryScreen(props: any) {
   };
 
   const tileClass = (item: any) =>
-    `gallery-tile${props.inspectedId === item.id ? " inspected" : ""}${props.selectedIds.includes(item.id) ? " selected" : ""}${item.favorite ? " is-favorite" : ""}${masked(item) ? " hidden-obscured" : ""}`;
+    `gallery-tile${props.inspectedId === item.id ? " inspected" : ""}${selectedIdSet.has(item.id) ? " selected" : ""}${item.favorite ? " is-favorite" : ""}${masked(item) ? " hidden-obscured" : ""}`;
 
   // Right-clicking a photo is the most direct place to manage its album
   // membership. The picker itself carries the album list and search.
@@ -2936,7 +2949,7 @@ function LibraryScreen(props: any) {
               <div className="selection-cluster">
                 {(() => {
                   const visibleCount = props.items.length;
-                  const allSelected = visibleCount > 0 && props.items.every((item: any) => props.selectedIds.includes(item.id));
+                  const allSelected = visibleCount > 0 && props.items.every((item: any) => selectedIdSet.has(item.id));
                   return (
                     <button
                       key="select-all"
@@ -3074,7 +3087,7 @@ function LibraryScreen(props: any) {
                     {renderedItems.map((item: any) => (
                     <article key={item.id} className={tileClass(item)} onContextMenu={(e: any) => { concealItem(item.id); props.onContextMenu(itemContextMenu(item), e); }}>
                       <div className="tile-select-check">
-                        <input type="checkbox" checked={props.selectedIds.includes(item.id)} onChange={() => props.onToggleSelect(item.id)} title={props.selectedIds.includes(item.id) ? "Remove from selection" : "Add to selection"} onClick={(e: any) => e.stopPropagation()} />
+                        <input type="checkbox" checked={selectedIdSet.has(item.id)} onChange={() => props.onToggleSelect(item.id)} title={selectedIdSet.has(item.id) ? "Remove from selection" : "Add to selection"} onClick={(e: any) => e.stopPropagation()} />
                         <CheckIcon size={12} />
                       </div>
                       <button type="button" className="tile-open-button" onClick={(e) => handleTileClick(item, e)} onDoubleClick={() => handleTileDoubleClick(item)} {...holdHandlers(item.id)}>
@@ -3106,9 +3119,8 @@ function LibraryScreen(props: any) {
               return (
                 <div className={`gallery-grid layout-timeline thumb-${thumbnailSize}`}>
                   {timelineGroups.length === 0 ? emptyView() : (
-                    visibleTimelineGroups.map(({ key, label, items, count }) => {
-                      const groupItems = timelineGroups.find((group) => group.key === key)?.items ?? items;
-                      const allSelected = groupItems.length > 0 && groupItems.every((item: any) => props.selectedIds.includes(item.id));
+                    visibleTimelineGroups.map(({ key, label, items, count, visibleItems }) => {
+                      const allSelected = items.length > 0 && items.every((item: any) => selectedIdSet.has(item.id));
                       return <React.Fragment key={key}>
                         <div className="timeline-group">
                           <div className="timeline-date-marker" aria-hidden="true"><span /></div>
@@ -3118,16 +3130,16 @@ function LibraryScreen(props: any) {
                             type="button"
                             className="timeline-select-group"
                             aria-pressed={allSelected}
-                            onClick={() => toggleTimelineGroup(groupItems)}
+                            onClick={() => toggleTimelineGroup(items)}
                             title={`Select or deselect all ${label} items`}
                           >
                             <span className="timeline-select-box">{allSelected ? <CheckIcon size={11} /> : null}</span>{allSelected ? "Selected" : "Select all"}
                           </button>
                         </div>
-                        {items.map((item: any) => (
+                        {visibleItems.map((item: any) => (
                           <article key={item.id} className={tileClass(item)} onContextMenu={(e: any) => { concealItem(item.id); props.onContextMenu(itemContextMenu(item), e); }}>
                             <div className="tile-select-check">
-                              <input type="checkbox" checked={props.selectedIds.includes(item.id)} onChange={() => props.onToggleSelect(item.id)} title={props.selectedIds.includes(item.id) ? "Remove from selection" : "Add to selection"} onClick={(e: any) => e.stopPropagation()} />
+                              <input type="checkbox" checked={selectedIdSet.has(item.id)} onChange={() => props.onToggleSelect(item.id)} title={selectedIdSet.has(item.id) ? "Remove from selection" : "Add to selection"} onClick={(e: any) => e.stopPropagation()} />
                         <CheckIcon size={12} />
                             </div>
                             <button type="button" className="tile-open-button" onClick={(e) => handleTileClick(item, e)} onDoubleClick={() => handleTileDoubleClick(item)} {...holdHandlers(item.id)}>
@@ -3162,7 +3174,7 @@ function LibraryScreen(props: any) {
                 {renderedItems.map((item: any) => (
                   <article key={item.id} className={tileClass(item)} onContextMenu={(e: any) => { concealItem(item.id); props.onContextMenu(itemContextMenu(item), e); }}>
                     <div className="tile-select-check">
-                      <input type="checkbox" checked={props.selectedIds.includes(item.id)} onChange={() => props.onToggleSelect(item.id)} title={props.selectedIds.includes(item.id) ? "Remove from selection" : "Add to selection"} onClick={(e: any) => e.stopPropagation()} />
+                      <input type="checkbox" checked={selectedIdSet.has(item.id)} onChange={() => props.onToggleSelect(item.id)} title={selectedIdSet.has(item.id) ? "Remove from selection" : "Add to selection"} onClick={(e: any) => e.stopPropagation()} />
                         <CheckIcon size={12} />
                     </div>
                     <button type="button" className="tile-open-button" onClick={(e) => handleTileClick(item, e)} onDoubleClick={() => handleTileDoubleClick(item)} {...holdHandlers(item.id)}>
@@ -3206,7 +3218,7 @@ function LibraryScreen(props: any) {
               // Inspection is independent of selection: the Inspector always
               // shows the inspected item, even when a larger multi-selection
               // exists (already-selected items stay inspectable).
-              const isSelected = props.selectedIds.includes(sel.id);
+              const isSelected = selectedIdSet.has(sel.id);
               return (
                 <>
                   <div className="inspector-top">

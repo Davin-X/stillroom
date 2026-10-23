@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback, useMemo, memo } from "react";
+import React, { useEffect, useRef, useState, useCallback, useMemo, useDeferredValue, memo } from "react";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { save, open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { currentMonitor, getCurrentWindow, LogicalSize, PhysicalPosition } from "@tauri-apps/api/window";
@@ -2203,6 +2203,24 @@ function VideoPlayer({ src, name, onFullscreen }: { src: string; name?: string; 
     };
   }, [src]);
 
+  // A video should never keep playing after its viewer goes away or the app
+  // moves into the background. Explicitly pause during teardown because the
+  // Tauri webview can retain media briefly while React removes the element.
+  useEffect(() => {
+    const video = ref.current;
+    if (!video) return;
+    const pauseWhenBackgrounded = () => {
+      if (document.visibilityState === "hidden" || !document.hasFocus()) video.pause();
+    };
+    document.addEventListener("visibilitychange", pauseWhenBackgrounded);
+    window.addEventListener("blur", pauseWhenBackgrounded);
+    return () => {
+      document.removeEventListener("visibilitychange", pauseWhenBackgrounded);
+      window.removeEventListener("blur", pauseWhenBackgrounded);
+      video.pause();
+    };
+  }, []);
+
   // Keyboard shortcuts for video (when focused)
   useEffect(() => {
     const video = ref.current;
@@ -3637,7 +3655,8 @@ function ViewerScreen(props: any) {
 
 function EditScreen(props: any) {
   const [pickerQuery, setPickerQuery] = useState("");
-  const [pickerLimit, setPickerLimit] = useState(120);
+  const deferredPickerQuery = useDeferredValue(pickerQuery);
+  const [pickerLimit, setPickerLimit] = useState(24);
   const [confirmReplace, setConfirmReplace] = useState(false);
   const [showOriginalPreview, setShowOriginalPreview] = useState(false);
   const [draftTrayOpen, setDraftTrayOpen] = useState(false);
@@ -3653,13 +3672,13 @@ function EditScreen(props: any) {
     [props.items, draftIds],
   );
   const pickerItems = useMemo(() => {
-    const query = pickerQuery.trim().toLowerCase();
+    const query = deferredPickerQuery.trim().toLowerCase();
     return (props.items || []).filter((item: any) =>
       item.kind === "photo" &&
       !draftIds.has(item.id) &&
       (!query || String(item.name || "").toLowerCase().includes(query)),
     );
-  }, [props.items, draftIds, pickerQuery]);
+  }, [props.items, draftIds, deferredPickerQuery]);
   const previewValues = showOriginalPreview ? initialEdits : values;
   const warmth = Number(previewValues.warmth || 0);
   const previewFilter = [
@@ -3670,7 +3689,7 @@ function EditScreen(props: any) {
     `hue-rotate(${warmth < 0 ? 180 : 0}deg)`,
   ].join(" ");
   useEffect(() => { setShowOriginalPreview(false); }, [props.item?.id]);
-  useEffect(() => { setPickerLimit(120); }, [pickerQuery]);
+  useEffect(() => { setPickerLimit(24); }, [deferredPickerQuery]);
   useEffect(() => {
     if (!drag || !props.item) return;
     const onMove = (e: any) => {
@@ -3760,19 +3779,19 @@ function EditScreen(props: any) {
             </div>
           );
         })()}
-        {filtered.length>0 ? (<>
+        {filtered.length > 0 ? (<>
           <div className="edit-picker-grid">{filtered.slice(0, pickerLimit).map((item:any)=> {
   const hasDraft = draftIds.has(item.id);
   return (
     <button key={item.id} type="button" className="edit-picker-tile" onClick={()=>props.onOpenEdit?.(item)}>
-      <img src={props.assetUrl(item.path)} alt={item.name} loading="lazy" decoding="async" style={draftImageStyle(draftTransforms, item.id)}/>
+      <img src={props.assetUrl(item.path)} alt={item.name} loading="lazy" decoding="async" fetchPriority="low" style={draftImageStyle(draftTransforms, item.id)}/>
       <span>{item.name}</span>
       {hasDraft && <span className="draft-badge">Draft</span>}
       {hasDraft && <span className="draft-remove" onClick={(e) => { e.stopPropagation(); clearEditDraft(item.id); props.onNotice?.("Draft removed"); }} title="Remove draft">×</span>}
     </button>
   );
 })}</div>
-          {filtered.length > pickerLimit && <button className="quiet-button" type="button" style={{ marginTop: 12 }} onClick={() => setPickerLimit((limit) => limit + 120)}>Show more photos ({filtered.length - pickerLimit} remaining)</button>}
+          {filtered.length > pickerLimit && <button className="quiet-button" type="button" style={{ marginTop: 12 }} onClick={() => setPickerLimit((limit) => limit + 24)}>Show 24 more photos ({filtered.length - pickerLimit} remaining)</button>}
         </>) : (<div className="viewer-empty-state"><div style={{ marginBottom: 16 }}><BrandMark size={56} /></div><h2>No photos found</h2><p>Import a folder or browse from disk.</p></div>) }
       </div>
     );

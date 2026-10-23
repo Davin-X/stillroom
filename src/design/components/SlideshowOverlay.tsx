@@ -81,7 +81,26 @@ export function SlideshowOverlay({ assetUrl }: SlideshowOverlayProps) {
     if (!video || item?.kind !== "video") return;
     if (playing) void video.play().catch(() => {});
     else video.pause();
+    return () => video.pause();
   }, [item?.id, item?.kind, playing]);
+
+  // Keep the slideshow from continuing to play media behind another app.
+  useEffect(() => {
+    if (!isOpen) return;
+    const pauseWhenBackgrounded = () => {
+      if (document.visibilityState !== "hidden" && document.hasFocus()) return;
+      const state = useSlideshowStore.getState();
+      if (state.playing) state.toggle();
+      videoRef.current?.pause();
+    };
+    document.addEventListener("visibilitychange", pauseWhenBackgrounded);
+    window.addEventListener("blur", pauseWhenBackgrounded);
+    return () => {
+      document.removeEventListener("visibilitychange", pauseWhenBackgrounded);
+      window.removeEventListener("blur", pauseWhenBackgrounded);
+      videoRef.current?.pause();
+    };
+  }, [isOpen]);
 
   // Reset the settings popover when the session ends.
   useEffect(() => {

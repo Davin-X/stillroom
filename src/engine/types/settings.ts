@@ -44,7 +44,7 @@ export interface AppSettings {
 export const defaultSettings: AppSettings = {
   appearance: "system",
   accentColor: "blue",
-  sidebarWidth: 220,
+  sidebarWidth: 240,
   showExtensions: false,
   animateTransitions: true,
   startupView: "library",

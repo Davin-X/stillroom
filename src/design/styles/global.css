@@ -627,32 +627,32 @@ body {
 }
 
 .app-frame.dark {
-  --surface: #171c23;
-  --surface-2: #1d232c;
-  --surface-3: #282f39;
-  --sidebar: #1a2028;
-  --ink: #edf1f6;
-  --text: #d1d8e1;
-  --muted: #a4afbc;
-  --faint: #95a1af;
-  --line: #303844;
-  --line-strong: #444f5d;
-  --accent: #8ab4ff;
+  --surface: #0b0d12;
+  --surface-2: #13161f;
+  --surface-3: #1a1e2a;
+  --sidebar: #13161f;
+  --ink: #e2e8f0;
+  --text: #e2e8f0;
+  --muted: #8b95a8;
+  --faint: #7d8799;
+  --line: #2a3042;
+  --line-strong: #353c52;
+  --accent: #3b82f6;
   --blue: var(--accent);
-  --accent-hover: #a6c4ff;
-  --accent-text: #8ab4ff;
-  --accent-contrast: #101418;
-  --accent-soft: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  --accent-hover: #2563eb;
+  --accent-text: #60a5fa;
+  --accent-contrast: #ffffff;
+  --accent-soft: color-mix(in srgb, var(--accent) 15%, var(--surface));
   --blue-soft: var(--accent-soft);
-  --green: #6bc69a;
+  --green: #34d399;
   --orange: #fb923c;
   --orange-soft: rgba(251, 146, 60, 0.15);
-  --field-line: #39414d;
-  --field-line-hover: #4c5663;
-  --field-inner: rgba(0, 0, 0, 0.3);
-  --field-inner-strong: rgba(0, 0, 0, 0.45);
-  --field-focus-inner: rgba(138, 180, 255, 0.26);
-  border-color: #343d49;
+  --field-line: #2a3042;
+  --field-line-hover: #353c52;
+  --field-inner: rgba(0, 0, 0, 0.35);
+  --field-inner-strong: rgba(0, 0, 0, 0.5);
+  --field-focus-inner: rgba(59, 130, 246, 0.28);
+  border-color: #2a3042;
 }
 
 .app-frame :is(h1, h2, h3, h4) {

@@ -1828,7 +1828,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
               variant="sheet"
               onAddFolder={() => importFolder()}
               onRemoveFolder={(folder: LibraryFolder) => setFolderPendingRemove(folder)}
-              onFilterSource={() => setSourcesSheetOpen(false)}
+              onFilterSource={() => { setScreen("Library"); setSourcesSheetOpen(false); }}
             />
             <div className="dialog-actions">
               <button

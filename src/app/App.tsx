@@ -525,16 +525,11 @@ function App() {
         }
         return;
       }
-      if (e.key === "ArrowRight") viewer.navigate(1);
-      if (e.key === "ArrowLeft") viewer.navigate(-1);
-      if (screen === "Viewer" && !mod && !e.altKey) {
-        // "r" rotates, "x" flips horizontally - both are view-only transforms.
-        // Plain F/H/E are reserved for Favorite/Hide/Edit per the shortcut map.
+      if (screen === "Viewer" && !e.defaultPrevented) {
         const target = e.target as HTMLElement;
         const isEditable = target.isContentEditable || target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT";
-        if (isEditable) return;
-        if (key === "r") { viewer.rotate(90); return; }
-        if (key === "x") { viewer.toggleFlip(); return; }
+        if (!isEditable && e.key === "ArrowRight") viewer.navigate(1);
+        if (!isEditable && e.key === "ArrowLeft") viewer.navigate(-1);
       }
       if (e.key === "Escape") {
         if (screen === "Viewer") {
@@ -1241,7 +1236,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
           <div className="sidebar-section sources-entry-section">
             <button
               type="button"
-              className="sources-entry"
+              className={`sources-entry${sourcesSheetOpen ? " open" : ""}`}
               onClick={() => setSourcesSheetOpen(true)}
               title="Manage library sources"
               aria-haspopup="dialog"
@@ -2065,10 +2060,28 @@ handlersRef.current = { importFolder, importFiles, showNotice };
 // metadata arrives makes the webview decode and paint a real frame.
 function VideoThumb({ src, name, className }: { src: string; name?: string; className?: string }) {
   const ref = useRef<HTMLVideoElement | null>(null);
+  const [nearViewport, setNearViewport] = useState(false);
 
   useEffect(() => {
     const video = ref.current;
     if (!video) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setNearViewport(true);
+      return;
+    }
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setNearViewport(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: "180px" });
+    observer.observe(video);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const video = ref.current;
+    if (!video || !nearViewport) return;
     const seek = () => {
       const duration = video.duration;
       if (!Number.isFinite(duration) || duration <= 0) return;
@@ -2081,17 +2094,17 @@ function VideoThumb({ src, name, className }: { src: string; name?: string; clas
     if (video.readyState >= 1) seek();
     else video.addEventListener("loadedmetadata", seek, { once: true });
     return () => video.removeEventListener("loadedmetadata", seek);
-  }, [src]);
+  }, [src, nearViewport]);
 
   return (
     <video
       ref={ref}
       className={className}
-      src={src}
+      src={nearViewport ? src : undefined}
       title={name}
       muted
       playsInline
-      preload="metadata"
+      preload={nearViewport ? "metadata" : "none"}
     />
   );
 }
@@ -2124,6 +2137,7 @@ function VideoPlayer({ src, name, onFullscreen }: { src: string; name?: string; 
     video.addEventListener("play", onPlay);
     video.addEventListener("pause", onPause);
     video.addEventListener("ended", onPause);
+    if (video.readyState >= 1) onMetadata();
     return () => {
       video.removeEventListener("loadedmetadata", onMetadata);
       video.removeEventListener("timeupdate", onTimeUpdate);
@@ -2140,15 +2154,19 @@ function VideoPlayer({ src, name, onFullscreen }: { src: string; name?: string; 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === " ") {
         e.preventDefault();
+        e.stopPropagation();
         toggle();
       } else if (e.key === "ArrowLeft") {
         e.preventDefault();
+        e.stopPropagation();
         seek(Math.max(0, video.currentTime - 5));
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
+        e.stopPropagation();
         seek(Math.min(video.duration || 0, video.currentTime + 5));
       } else if (e.key === "f" || e.key === "F") {
         e.preventDefault();
+        e.stopPropagation();
         onFullscreen?.();
       }
     };
@@ -3177,14 +3195,6 @@ function LibraryScreen(props: any) {
             </div>
           )}
         </div>
-        <div className="library-footer-status">
-          <span>Showing <strong>{props.items.length.toLocaleString()}</strong> {props.items.length === 1 ? "item" : "items"}</span>
-          {props.selectedIds.length > 0 && <span className="footer-selection-status">
-            {props.selectedIds.length.toLocaleString()} selected
-            <span aria-hidden="true">·</span>
-            <strong>{formatBytesSimple(selectedItems.reduce((sum: number, item: any) => sum + (item.size || 0), 0))}</strong>
-          </span>}
-        </div>
       </section>
 
       {props.showInspector && (
@@ -3338,7 +3348,12 @@ function ViewerScreen(props: any) {
     : "";
   const folderName = folderPath.split("/").filter(Boolean).pop() || "Local Files";
   const [hintsVisible, setHintsVisible] = useState(true);
+  const [stripStart, setStripStart] = useState(() => Math.max(0, props.items.findIndex((item: any) => item.id === selected?.id) - 18));
   const hideTimerRef = useRef<number | null>(null);
+  const stripWindowSize = 50;
+  const selectedIndex = props.items.findIndex((item: any) => item.id === selected?.id);
+  const stripEnd = Math.min(props.items.length, stripStart + stripWindowSize);
+  const imageRotation = (props.rotation + (draftTransforms.get(selected?.id)?.rotation || 0)) % 360;
 
   // Shortcut hints are shown on open and whenever the pointer moves over the
   // stage, then fade away after a short pause so the frame stays clean.
@@ -3357,9 +3372,26 @@ function ViewerScreen(props: any) {
 
   // Keep the active thumbnail in view as you navigate a long filmstrip.
   useEffect(() => {
+    if (selectedIndex < 0) return;
+    if (selectedIndex < stripStart || selectedIndex >= stripEnd) {
+      setStripStart(Math.max(0, Math.min(selectedIndex - 18, props.items.length - stripWindowSize)));
+    }
+  }, [selectedIndex, stripStart, stripEnd, props.items.length]);
+
+  useEffect(() => {
     const active = stripRef.current?.querySelector<HTMLElement>(".filmstrip button.active");
     active?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [props.selected?.id]);
+  }, [props.selected?.id, stripStart]);
+
+  const handleFilmstripScroll = useCallback(() => {
+    const strip = stripRef.current;
+    if (!strip || props.items.length <= stripWindowSize) return;
+    const nextStart = Math.max(0, Math.min(
+      Math.floor(Math.max(0, strip.scrollLeft - 68) / 60) - 10,
+      props.items.length - stripWindowSize,
+    ));
+    setStripStart((current) => Math.abs(nextStart - current) > 5 ? nextStart : current);
+  }, [props.items.length]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -3369,14 +3401,6 @@ function ViewerScreen(props: any) {
       if (useSlideshowStore.getState().isOpen) return;
 
       switch (e.key) {
-        case "ArrowLeft":
-          e.preventDefault();
-          props.onNavigate(-1);
-          break;
-        case "ArrowRight":
-          e.preventDefault();
-          props.onNavigate(1);
-          break;
         case "ArrowUp":
           if (selected.kind === "photo") {
             e.preventDefault();
@@ -3421,10 +3445,6 @@ function ViewerScreen(props: any) {
             e.preventDefault();
             // VideoPlayer handles space internally via click
           }
-          break;
-        case "Escape":
-          e.preventDefault();
-          props.onNavigate(0); // Will close viewer via parent
           break;
       }
     };
@@ -3476,6 +3496,14 @@ function ViewerScreen(props: any) {
             )}
           </div>
         </div>
+        <button
+          className="quiet-button viewer-slideshow-button"
+          type="button"
+          onClick={() => props.onPlaySlideshow?.(props.items.map((i: any) => i.id))}
+          title="Play this collection as a slideshow"
+        >
+          <PlayIcon size={14} /> Slideshow
+        </button>
       </div>
       <div className="viewer-stage" onMouseMove={() => flashHints()} onDoubleClick={(e) => {
         if (selected.kind !== "photo") return;
@@ -3487,23 +3515,15 @@ function ViewerScreen(props: any) {
           src={props.assetUrl(selected.path)}
           name={selected.name}
           onFullscreen={() => void props.onToggleFullscreen()}
-        /> : selected.kind === "photo" ? <img src={props.assetUrl(selected.path)} alt={selected.name} style={{ transform: [`rotate(${props.rotation || 0}deg)`, `scaleX(${props.flipX ? -1 : 1})`, draftTransformStyle(draftTransforms.get(selected.id)), `scale(${props.zoom / 100})`].filter(Boolean).join(" ") }} /> : <div className="raw-viewer"><b>{selected.extension.toUpperCase()}</b><span>RAW preview requires native backend</span></div>}
+        /> : selected.kind === "photo" ? <img src={props.assetUrl(selected.path)} alt={selected.name} decoding="async" style={{ maxWidth: imageRotation % 180 ? "min(100%, 100cqh)" : undefined, maxHeight: imageRotation % 180 ? "min(100%, 100cqw)" : undefined, transform: [`rotate(${props.rotation || 0}deg)`, `scaleX(${props.flipX ? -1 : 1})`, draftTransformStyle(draftTransforms.get(selected.id)), `scale(${props.zoom / 100})`].filter(Boolean).join(" ") }} /> : <div className="raw-viewer"><b>{selected.extension.toUpperCase()}</b><span>RAW preview requires native backend</span></div>}
         <button className="viewer-arrow right" type="button" onClick={() => props.onNavigate(1)} aria-label="Next">›</button>
         <div className="viewer-overlay-top">
           <span className="viewer-transform-state">
             {props.rotation ? `${props.rotation}°` : ""}
             {props.rotation && props.flipX ? " · " : ""}
             {props.flipX ? "Flipped" : ""}
-            {props.items.findIndex((i: any) => i.id === props.selected?.id) + 1} / {props.items.length}
+            {selectedIndex + 1} / {props.items.length}
           </span>
-          <button
-            className="viewer-slideshow-button"
-            type="button"
-            onClick={() => props.onPlaySlideshow?.(props.items.map((i: any) => i.id))}
-            title="Play this collection as a slideshow"
-          >
-            <PlayIcon size={12} /> Slideshow
-          </button>
         </div>
         {/* Compact shortcut hints live in the stage corner so the frame keeps
             all of its room for the media and the control bar. */}
@@ -3530,16 +3550,18 @@ function ViewerScreen(props: any) {
           </div>
         )}
       </div>
-      <div className="filmstrip" ref={stripRef}>
+      <div className="filmstrip" ref={stripRef} onScroll={handleFilmstripScroll}>
         <span className="filmstrip-label">FOLDER</span>
-        {props.items.map((item: any) => (
+        {stripStart > 0 && <span className="filmstrip-spacer" aria-hidden="true" style={{ flexBasis: `${stripStart * 60}px` }} />}
+        {props.items.slice(stripStart, stripEnd).map((item: any) => (
           <button type="button" title={item.name} className={item.id === props.selected?.id ? "active" : ""} key={item.id} onClick={() => props.onSetPhoto(item.id)}>
-            {item.kind === "photo" ? <img src={props.assetUrl(item.path)} alt={item.name} style={draftImageStyle(draftTransforms, item.id)} />
+            {item.kind === "photo" ? <img src={props.assetUrl(item.path)} alt={item.name} loading="lazy" decoding="async" style={draftImageStyle(draftTransforms, item.id)} />
               : item.kind === "video" ? <VideoThumb src={props.assetUrl(item.path)} name={item.name} />
               : <span>{item.extension.toUpperCase()}</span>}
             <KindDot kind={item.kind} />
           </button>
         ))}
+        {stripEnd < props.items.length && <span className="filmstrip-spacer" aria-hidden="true" style={{ flexBasis: `${(props.items.length - stripEnd) * 60}px` }} />}
       </div>
     </div>
   );

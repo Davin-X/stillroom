@@ -1,5 +1,5 @@
 /**
- * Runtime smoke test for the store changes made in this session.
+ * Runtime smoke checks for the library and viewer stores.
  * Run with: node scripts/smoke-stores.mjs
  *
  * The Tauri `invoke` layer is stubbed so the stores can be exercised

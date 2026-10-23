@@ -2584,7 +2584,7 @@ body {
 .brand-mark {
   display: block;
   flex: 0 0 auto;
-  filter: drop-shadow(0 2px 5px rgba(61, 20, 102, 0.28));
+  filter: drop-shadow(0 2px 5px rgba(4, 43, 47, 0.3));
 }
 
 .topbar-context {
@@ -2841,9 +2841,9 @@ body {
   gap: 9px;
   width: 100%;
   padding: 9px 10px;
-  border: 1px solid var(--line);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line));
   border-radius: 8px;
-  background: var(--surface);
+  background: color-mix(in srgb, var(--blue-soft) 30%, var(--surface));
   color: inherit;
   font: inherit;
   text-align: left;
@@ -2852,13 +2852,18 @@ body {
 }
 
 .sources-entry:hover {
-  border-color: var(--line-strong);
-  background: var(--surface-2);
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+  background: color-mix(in srgb, var(--blue-soft) 52%, var(--surface));
+}
+
+.sources-entry.open {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--line));
+  background: color-mix(in srgb, var(--blue-soft) 58%, var(--surface));
 }
 
 .sources-entry-icon {
   display: inline-flex;
-  color: var(--faint);
+  color: var(--accent-text);
 }
 
 .sources-entry-text {
@@ -3108,6 +3113,76 @@ body {
   outline-offset: 2px;
 }
 
+/* Keep every source ratio inside the same calm, dark viewing canvas. */
+.viewer-stage {
+  overflow: hidden;
+  isolation: isolate;
+  container-type: size;
+  background: radial-gradient(ellipse at center, #20242b 0%, #111318 72%);
+}
+
+.viewer-stage > img,
+.viewer-stage > video.viewer-video {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  object-position: center;
+}
+
+.viewer-stage > video.viewer-video {
+  width: 100%;
+  height: 100%;
+}
+
+.filmstrip-spacer {
+  display: block;
+  flex: 0 0 auto;
+  height: 1px;
+  pointer-events: none;
+}
+
+.filmstrip {
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
+.filmstrip img {
+  content-visibility: auto;
+}
+
+.filmstrip button.active {
+  outline: 2px solid var(--accent, #7c9cff);
+  outline-offset: 1px;
+}
+
+.slideshow-media {
+  inset: 0;
+  container-type: size;
+  padding: 24px clamp(16px, 4vw, 56px);
+  box-sizing: border-box;
+}
+
+.slideshow-media img,
+.slideshow-media video {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  object-position: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slideshow-media img,
+  .slideshow-media video {
+    animation: none !important;
+  }
+}
+
 .viewer-overlay-bottom {
   position: absolute;
   bottom: 20px;
@@ -3230,10 +3305,11 @@ body {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-/* Compact shortcut hints pinned to the stage's top-right corner. */
+/* Keep shortcut hints below the top controls so the slideshow button cannot
+   cover them. */
 .viewer-hints {
   position: absolute;
-  top: 12px;
+  top: 56px;
   right: 14px;
   z-index: 2;
   display: flex;
@@ -4987,23 +5063,7 @@ body {
   color: #15181c;
 }
 
-.viewer-slideshow-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 7px;
-  background: rgba(20, 24, 30, 0.6);
-  color: #fff;
-  font-size: 11px;
-  cursor: pointer;
-  backdrop-filter: blur(10px);
-}
-
-.viewer-slideshow-button:hover {
-  background: rgba(255, 255, 255, 0.18);
-}
+.viewer-slideshow-button { flex: 0 0 auto; gap: 7px; }
 
 /* ==========================================================================
    Batch export
@@ -6168,32 +6228,6 @@ body {
   }
 }
 
-.library-footer-status {
-  height: 24px;
-  margin-top: auto;
-  border-top: 1px solid var(--line);
-  background: var(--surface-2);
-  padding: 0 8px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 10px;
-  color: var(--muted);
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.library-footer-status strong { color: var(--text); }
-.footer-badges { display: flex; gap: 6px; }
-.footer-badge {
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: var(--surface-3);
-  border: 1px solid var(--line);
-  font-family: var(--font-mono, monospace);
-  font-size: 10px;
-  color: var(--muted);
-}
-
 /* Details view: a real six-track table, with the sticky headings inside the
    same scroll region as the rows. The selection checkbox gets its own track
    so it never overlaps file-size text. */
@@ -6771,22 +6805,6 @@ body {
 .stat-size { color: var(--faint); font-weight: 450; }
 .stat-row.size { border-top: 1px solid var(--line-strong); }
 
-.library-footer-status {
-  flex: 0 0 34px;
-  box-sizing: border-box;
-  min-height: 34px;
-  height: auto;
-  margin: 0;
-  padding: 0 20px;
-  border-top-color: var(--line);
-  background: var(--surface-2);
-  color: var(--muted);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-.footer-selection-status { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; }
-.footer-selection-status strong { color: var(--text); }
-
 .viewer-screen { gap: 0; }
 .viewer-screen > .viewer-heading { flex: 0 0 auto; margin-bottom: 16px; }
 .viewer-stage { min-height: 280px; overflow: hidden; }
@@ -6830,7 +6848,6 @@ body {
 }
 
 @media (max-width: 600px) {
-  .library-footer-status { padding: 0 12px; }
   .viewer-screen { padding: 14px; }
   .viewer-overlay-bottom {
     left: 8px;

@@ -14,8 +14,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Refined the top bar, compact navigation, source controls, and destructive settings section
 - Updated README and release notes to reflect the current views and browser preview limitations
 - Built the browser harness as a second Vite entry so it also works with `npm run preview`
+- Improved Viewer navigation and filmstrip behavior, with media fit respecting image aspect ratios
+- Refreshed the app and in-app brand marks; added native macOS and Windows icon bundle assets
 
 ### Fixed
+- Slideshow video playback now advances on the video's ended event and follows play/pause state
 - Inspector toggle uses the inspector icon and remains available in narrow windows
 - Hidden item details stay concealed in the inspector until the preview is revealed
 - Removed unused panel imports, props, CSS rules, and frontend dependencies

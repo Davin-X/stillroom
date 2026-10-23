@@ -358,7 +358,7 @@ body {
 }
 
 /* Source select dropdown styling */
-@media (max-width: 900px) {
+@media (max-width: 1200px) {
   .library-header-row {
     align-items: flex-start;
   }
@@ -371,9 +371,16 @@ body {
     justify-content: flex-end;
     gap: 6px;
   }
+  .header-actions .btn-label {
+    display: none;
+  }
+  .header-actions .primary-button,
+  .header-actions .quiet-button {
+    padding: 0 10px;
+  }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 720px) {
   .library-header-row {
     gap: 10px;
   }
@@ -390,13 +397,6 @@ body {
   .header-actions .quiet-button {
     flex: 1 1 auto;
     justify-content: center;
-  }
-  .header-actions .btn-label {
-    display: none;
-  }
-  .header-actions .primary-button,
-  .header-actions .quiet-button {
-    padding: 0 10px;
   }
 }
 .source-select {

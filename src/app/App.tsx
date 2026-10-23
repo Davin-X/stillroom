@@ -1150,17 +1150,22 @@ handlersRef.current = { importFolder, importFiles, showNotice };
               className="sources-entry"
               onClick={() => setSourcesSheetOpen(true)}
               title="Manage library sources"
+              aria-haspopup="dialog"
+              aria-expanded={sourcesSheetOpen}
             >
               <span className="sources-entry-icon"><FolderIcon size={16} /></span>
               <span className="sources-entry-text">
-                <span className="sources-entry-name">All Sources</span>
+                <span className="sources-entry-name">Sources</span>
                 <span className="sources-entry-count">
-                  {library.folders.length.toLocaleString()} folder{library.folders.length === 1 ? "" : "s"}
-                  {" · "}
-                  {library.folders.reduce((total: number, folder: LibraryFolder) => total + folder.itemCount, 0).toLocaleString()} items
+                  {library.folders.length === 0
+                    ? "No sources yet"
+                    : `${library.folders.length.toLocaleString()} folder${library.folders.length === 1 ? "" : "s"} · ${library.folders.reduce((total: number, folder: LibraryFolder) => total + folder.itemCount, 0).toLocaleString()} items`}
                 </span>
               </span>
-              <span className="sources-entry-chevron" aria-hidden="true">›</span>
+              <span className="sources-entry-action">
+                <span className="sources-entry-manage">Manage</span>
+                <span className="sources-entry-chevron" aria-hidden="true">›</span>
+              </span>
             </button>
           </div>
 
@@ -1823,6 +1828,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
               variant="sheet"
               onAddFolder={() => importFolder()}
               onRemoveFolder={(folder: LibraryFolder) => setFolderPendingRemove(folder)}
+              onFilterSource={() => setSourcesSheetOpen(false)}
             />
             <div className="dialog-actions">
               <button
@@ -2614,15 +2620,15 @@ function LibraryScreen(props: any) {
                 </button>
                 {!props.hiddenView && (
                   <>
-                    <label className="source-select" title="Filter the library by folder">
+                    <label className="source-select" title="Filter the library by source">
                       <FolderIcon size={14} />
-                      <span className="source-select-label">Folder</span>
+                      <span className="source-select-label">Source</span>
                       <select
                         value={library.activeSource ?? ""}
                         onChange={(e) => library.setActiveSource(e.target.value || null)}
-                        aria-label="Filter the library by folder"
+                        aria-label="Filter the library by source"
                       >
-                        <option value="">All folders</option>
+                        <option value="">All sources</option>
                         {library.folders.map((folder: LibraryFolder) => (
                           <option key={folder.path} value={folder.path}>{folder.name}</option>
                         ))}

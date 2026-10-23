@@ -2469,6 +2469,23 @@ body {
   white-space: nowrap;
 }
 
+.sources-entry-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sources-entry-manage {
+  color: var(--faint);
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.sources-entry:hover .sources-entry-manage {
+  color: var(--accent-text);
+}
+
 .sources-entry-chevron {
   color: var(--faint);
   font-size: 15px;
@@ -3820,6 +3837,26 @@ body {
   color: var(--text);
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.24);
   animation: dialog-pop 0.15s ease;
+}
+
+/* Sources needs room for names, paths and counts; the generic dialog width
+   would force every row into an ellipsis. */
+.album-dialog.sources-sheet {
+  display: flex;
+  flex-direction: column;
+  width: min(780px, 100%);
+  max-height: min(84vh, 720px);
+  overflow: hidden;
+}
+
+.sources-sheet .sources-manager {
+  min-height: 0;
+  margin-top: 16px;
+  overflow-y: auto;
+}
+
+.sources-sheet .dialog-actions {
+  margin-top: 16px;
 }
 
 .dialog-heading {

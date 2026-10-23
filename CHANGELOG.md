@@ -7,19 +7,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Added
-- Modern sunset-flat app icon suite (16×16 → 1024×1024, squircle mask, anti-aliased)
-- `BrandMark` SVG component matching the app icon
-- Shared icon contract in `src/design/components/icons.tsx` (24×24 viewBox, `currentColor`)
-- Tauri menu bar definition (`src-tauri/src/menu.rs`)
-- This documentation suite (README, CONTRIBUTING, CODE_OF_CONDUCT, SECURITY, CHANGELOG, issue/PR templates)
+- Details and Timeline library views, including sortable details columns and timeline group selection
+- Sources manager actions for filtering, rescanning, revealing, and removing indexed folders
 
 ### Changed
-- Renamed GitHub repository from `mac-gallery` to `stillroom` (product name alignment)
-- `main` branch protected: 1 approving review required, stale reviews dismissed, force-push/delete blocked
-- README rewritten for product release (features, quick start, architecture, roadmap)
+- Refined the top bar, compact navigation, source controls, and destructive settings section
+- Updated README and release notes to reflect the current views and browser preview limitations
+- Built the browser harness as a second Vite entry so it also works with `npm run preview`
 
 ### Fixed
-- Inspector toggle previously used `ShareIcon` (semantically wrong); planned swap to `DetailsIcon`
+- Inspector toggle uses the inspector icon and remains available in narrow windows
+- Hidden item details stay concealed in the inspector until the preview is revealed
+- Removed unused panel imports, props, CSS rules, and frontend dependencies
 
 ## [0.1.0] — 2026-10-19
 
@@ -31,4 +30,3 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Duplicate detection (SHA-256)
 - Batch tools, slideshow, dark/light/system theme
 - Tauri 2 + Rust backend scaffold with SQLite catalog, EXIF metadata commands, vault commands
-- DESIGN_ANALYSIS.md and DESIGN_IMPROVEMENTS.md specifications

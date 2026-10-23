@@ -198,10 +198,35 @@ impl Database {
         .execute(&self.pool)
         .await?;
 
+        // Thumbnail size used to default to medium. Upgrade that implicit
+        // default once so existing installs open with the new small default,
+        // while preserving any later user choice of medium.
+        sqlx::query(
+            "UPDATE settings SET value = 'small' \
+             WHERE key = 'thumbnail_size' AND value = 'medium' \
+             AND NOT EXISTS (SELECT 1 FROM settings WHERE key = 'thumbnail_size_default_migrated')",
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES ('thumbnail_size_default_migrated', '1')",
+        )
+        .execute(&self.pool)
+        .await?;
+
         // Stale keys from the removed privacy controls are no longer read.
         sqlx::query("DELETE FROM settings WHERE key GLOB 'vault_*'")
             .execute(&self.pool)
             .await?;
+
+        // Remove obsolete privacy toggles that never controlled runtime
+        // behavior. Privacy is now described accurately in the UI instead of
+        // persisting unsupported network, reporting, and export options.
+        sqlx::query(
+            "DELETE FROM settings WHERE key IN ('strip_gps_on_export', 'strip_all_metadata_on_export', 'allow_network_requests', 'send_crash_reports')",
+        )
+        .execute(&self.pool)
+        .await?;
 
         // Backfill dimensions for existing photos scanned before the fix.
         // Only touches rows where width is 0 or NULL.

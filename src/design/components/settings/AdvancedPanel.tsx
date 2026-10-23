@@ -1,9 +1,5 @@
-import React from "react";
-import { useSettingsStore, useAppearance, useAccentColor, useSidebarWidth, useDefaultLayout, useLibraryStore, useSystemDark, ACCENT_PALETTE } from "../../../engine/stores";
-import { tauri } from "../../../engine/commands/tauri";
-import type { LibraryFolder } from "../../../engine/types/commands";
-import { SourcesManager } from "../SourcesManager";
-import { LockIcon, GearIcon, EyeIcon, FolderIcon, ShieldIcon, CpuIcon, TrashIcon, RotateCcwIcon, DownloadIcon, InfoIcon } from "../icons";
+import type { CSSProperties } from "react";
+import { CpuIcon, TrashIcon } from "../icons";
 
 export function AdvancedPanel(props: {
   maxCacheSize: number;
@@ -11,12 +7,8 @@ export function AdvancedPanel(props: {
   debugLogging: boolean;
   showNativeWarnings: boolean;
   onChange: (key: any, value: any) => void;
-  showResetConfirm: boolean;
   setShowResetConfirm: (v: boolean) => void;
-  showDeleteConfirm: boolean;
   setShowDeleteConfirm: (v: boolean) => void;
-  onConfirmReset: () => void;
-  onConfirmDelete: () => void;
   deleting: boolean;
   onRebuild: () => void;
   rebuilding: boolean;
@@ -36,6 +28,7 @@ export function AdvancedPanel(props: {
             <input
               type="range"
               className="settings-slider"
+              style={{ "--slider-progress": `${((props.maxCacheSize - 1) / 49) * 100}%` } as CSSProperties}
               min={1}
               max={50}
               step={1}
@@ -55,6 +48,7 @@ export function AdvancedPanel(props: {
             <input
               type="range"
               className="settings-slider"
+              style={{ "--slider-progress": `${((props.thumbnailQuality - 50) / 50) * 100}%` } as CSSProperties}
               min={50}
               max={100}
               step={5}
@@ -96,6 +90,7 @@ export function AdvancedPanel(props: {
             <label className="toggle-switch">
               <input
                 type="checkbox"
+                aria-label="Enable debug logging"
                 checked={props.debugLogging}
                 onChange={(e) => props.onChange("enableDebugLogging", e.target.checked)}
               />
@@ -112,6 +107,7 @@ export function AdvancedPanel(props: {
             <label className="toggle-switch">
               <input
                 type="checkbox"
+                aria-label="Show native limit warnings"
                 checked={props.showNativeWarnings}
                 onChange={(e) => props.onChange("showNativeLimitWarnings", e.target.checked)}
               />
@@ -125,6 +121,7 @@ export function AdvancedPanel(props: {
         <h2 className="settings-section-title">
           <TrashIcon size={14} /> Danger Zone
         </h2>
+        <p className="settings-section-desc">These actions change Stillroom preferences or its catalog. Original media files are never deleted.</p>
         <div className="settings-row">
           <div className="settings-row-label">
             <b>Reset All Settings</b>
@@ -132,7 +129,7 @@ export function AdvancedPanel(props: {
           </div>
           <div className="settings-row-control">
             <button className="danger-button" type="button" onClick={() => props.setShowResetConfirm(true)}>
-              Reset All Settings
+              Reset All Settings…
             </button>
           </div>
         </div>
@@ -148,7 +145,7 @@ export function AdvancedPanel(props: {
               onClick={() => props.setShowDeleteConfirm(true)}
               disabled={props.deleting}
             >
-              {props.deleting ? "Deleting…" : "Delete Library Database"}
+              {props.deleting ? "Deleting…" : "Delete Library Database…"}
             </button>
           </div>
         </div>

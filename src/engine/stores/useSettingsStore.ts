@@ -76,7 +76,11 @@ export const useSettingsStore = create<SettingsState>()(
         set({ _loading: true });
         try {
           const saved = await tauri.settings.get();
-          set({ ...saved, _hydrated: true, _loading: false });
+          // Older builds exposed layout names that the library no longer
+          // supports. Keep persisted preferences safe when upgrading.
+          const savedLayout = (saved as Partial<AppSettings>)?.defaultLayout;
+          const defaultLayout = savedLayout === "details" || savedLayout === "timeline" ? savedLayout : "grid";
+          set({ ...saved, defaultLayout, _hydrated: true, _loading: false });
         } catch {
           // Tauri not available (web preview) - use persisted or defaults
           set({ _hydrated: true, _loading: false });
@@ -127,6 +131,7 @@ export const useAppearance = () => useSettingsStore((s) => s.appearance);
 export const useAccentColor = () => useSettingsStore((s) => s.accentColor);
 export const useSidebarWidth = () => useSettingsStore((s) => s.sidebarWidth);
 export const useDefaultLayout = () => useSettingsStore((s) => s.defaultLayout);
+export const useThumbnailSize = () => useSettingsStore((s) => s.thumbnailSize);
 
 // Apply theme to the native app frame.
 //

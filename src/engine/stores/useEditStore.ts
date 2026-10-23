@@ -22,10 +22,10 @@ function notifyDraftChanged() {
   draftListeners.forEach((listener) => listener());
 }
 
-function persistDraft(itemId: string, values: EditValues, history: EditValues[], historyIndex: number) {
+function persistDraft(itemId: string, values: EditValues, history: EditValues[], historyIndex: number, crop?: CropState) {
   if (typeof localStorage !== "undefined") {
     try {
-      localStorage.setItem(draftKey(itemId), JSON.stringify({ values, history, historyIndex }));
+      localStorage.setItem(draftKey(itemId), JSON.stringify({ values, history, historyIndex, ...(crop ? { crop } : {}) }));
     } catch {
       // A full or unavailable localStorage should not break editing.
     }
@@ -144,6 +144,7 @@ export const useEditStore = create<EditState>()(
       open: (item) => {
         const draftRaw = (typeof localStorage !== "undefined") ? localStorage.getItem(`edit:draft:${item.id}`) : null;
         let values = defaultEdits;
+        let crop = defaultCrop;
         let history = [defaultEdits];
         let historyIndex = 0;
         if (draftRaw) {
@@ -151,6 +152,7 @@ export const useEditStore = create<EditState>()(
             const parsed = JSON.parse(draftRaw);
             if (parsed && parsed.values) {
               values = { ...defaultEdits, ...parsed.values };
+              crop = { ...defaultCrop, ...(parsed.crop || {}) };
               history = Array.isArray(parsed.history) ? parsed.history : [values];
               historyIndex = typeof parsed.historyIndex === "number" ? parsed.historyIndex : history.length - 1;
             }
@@ -161,7 +163,7 @@ export const useEditStore = create<EditState>()(
         set({
           item,
           values,
-          crop: defaultCrop,
+          crop,
           history,
           historyIndex,
         });
@@ -171,7 +173,7 @@ export const useEditStore = create<EditState>()(
 
       saveDraft: () => {
         const { item, values, history, historyIndex } = get();
-        if (item) persistDraft(item.id, values, history, historyIndex);
+        if (item) persistDraft(item.id, values, history, historyIndex, get().crop);
       },
 
       setValue: (key, value) => {
@@ -181,7 +183,7 @@ export const useEditStore = create<EditState>()(
         newHistory.push(next);
         if (newHistory.length > 50) newHistory.shift();
         set({ values: next, history: newHistory, historyIndex: newHistory.length - 1 });
-        if (item) persistDraft(item.id, next, newHistory, newHistory.length - 1);
+        if (item) persistDraft(item.id, next, newHistory, newHistory.length - 1, get().crop);
       },
 
       setValues: (partial) => {
@@ -191,7 +193,7 @@ export const useEditStore = create<EditState>()(
         newHistory.push(next);
         if (newHistory.length > 50) newHistory.shift();
         set({ values: next, history: newHistory, historyIndex: newHistory.length - 1 });
-        if (item) persistDraft(item.id, next, newHistory, newHistory.length - 1);
+        if (item) persistDraft(item.id, next, newHistory, newHistory.length - 1, get().crop);
       },
 
       reset: () => {
@@ -213,7 +215,7 @@ export const useEditStore = create<EditState>()(
         const newHistory = history.slice(0, historyIndex + 1);
         newHistory.push(autoEdits);
         set({ values: autoEdits, history: newHistory, historyIndex: newHistory.length - 1 });
-        if (item) persistDraft(item.id, autoEdits, newHistory, newHistory.length - 1);
+        if (item) persistDraft(item.id, autoEdits, newHistory, newHistory.length - 1, get().crop);
       },
 
       rotate: (degrees) => {
@@ -222,7 +224,7 @@ export const useEditStore = create<EditState>()(
         const newHistory = history.slice(0, historyIndex + 1);
         newHistory.push(next);
         set({ values: next, history: newHistory, historyIndex: newHistory.length - 1 });
-        if (item) persistDraft(item.id, next, newHistory, newHistory.length - 1);
+        if (item) persistDraft(item.id, next, newHistory, newHistory.length - 1, get().crop);
       },
 
       flip: () => {
@@ -231,19 +233,28 @@ export const useEditStore = create<EditState>()(
         const newHistory = history.slice(0, historyIndex + 1);
         newHistory.push(next);
         set({ values: next, history: newHistory, historyIndex: newHistory.length - 1 });
-        if (item) persistDraft(item.id, next, newHistory, newHistory.length - 1);
+        if (item) persistDraft(item.id, next, newHistory, newHistory.length - 1, get().crop);
       },
 
-      setCrop: (partial) => set((s) => ({ crop: { ...s.crop, ...partial } })),
+      setCrop: (partial) => {
+        const { item, values, history, historyIndex, crop } = get();
+        const nextCrop = { ...crop, ...partial };
+        set({ crop: nextCrop });
+        if (item) persistDraft(item.id, values, history, historyIndex, nextCrop);
+      },
 
-      resetCrop: () => set({ crop: defaultCrop }),
+      resetCrop: () => {
+        const { item, values, history, historyIndex } = get();
+        set({ crop: defaultCrop });
+        if (item) persistDraft(item.id, values, history, historyIndex, defaultCrop);
+      },
 
       undo: () => {
         const { history, historyIndex, item } = get();
         if (historyIndex > 0) {
           const nextIndex = historyIndex - 1;
           set({ values: history[nextIndex], historyIndex: nextIndex });
-          if (item) persistDraft(item.id, history[nextIndex], history, nextIndex);
+          if (item) persistDraft(item.id, history[nextIndex], history, nextIndex, get().crop);
         }
       },
 
@@ -252,7 +263,7 @@ export const useEditStore = create<EditState>()(
         if (historyIndex < history.length - 1) {
           const nextIndex = historyIndex + 1;
           set({ values: history[nextIndex], historyIndex: nextIndex });
-          if (item) persistDraft(item.id, history[nextIndex], history, nextIndex);
+          if (item) persistDraft(item.id, history[nextIndex], history, nextIndex, get().crop);
         }
       },
 

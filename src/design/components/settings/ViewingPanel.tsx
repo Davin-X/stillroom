@@ -1,9 +1,5 @@
-import React from "react";
-import { useSettingsStore, useAppearance, useAccentColor, useSidebarWidth, useDefaultLayout, useLibraryStore, useSystemDark, ACCENT_PALETTE } from "../../../engine/stores";
-import { tauri } from "../../../engine/commands/tauri";
-import type { LibraryFolder } from "../../../engine/types/commands";
-import { SourcesManager } from "../SourcesManager";
-import { LockIcon, GearIcon, EyeIcon, FolderIcon, ShieldIcon, CpuIcon, TrashIcon, RotateCcwIcon, DownloadIcon, InfoIcon } from "../icons";
+import type { CSSProperties } from "react";
+import { EyeIcon } from "../icons";
 
 export function ViewingPanel(props: {
   defaultLayout: string;
@@ -39,6 +35,7 @@ export function ViewingPanel(props: {
           <div className="settings-row-control">
             <select
               className="settings-select"
+              aria-label="Thumbnail size"
               value={props.thumbnailSize}
               onChange={(e) => props.onChange("thumbnailSize", e.target.value)}
             >
@@ -61,6 +58,7 @@ export function ViewingPanel(props: {
             <input
               type="range"
               className="settings-slider"
+              style={{ "--slider-progress": `${((props.slideshowInterval - 2) / 28) * 100}%` } as CSSProperties}
               min={2}
               max={30}
               step={1}
@@ -80,6 +78,7 @@ export function ViewingPanel(props: {
             <label className="toggle-switch">
               <input
                 type="checkbox"
+                aria-label="Shuffle slideshow"
                 checked={props.slideshowShuffle}
                 onChange={(e) => props.onChange("slideshowShuffle", e.target.checked)}
               />
@@ -96,6 +95,7 @@ export function ViewingPanel(props: {
             <label className="toggle-switch">
               <input
                 type="checkbox"
+                aria-label="Loop slideshow"
                 checked={props.slideshowLoop}
                 onChange={(e) => props.onChange("slideshowLoop", e.target.checked)}
               />
@@ -118,6 +118,7 @@ export function ViewingPanel(props: {
             <label className="toggle-switch">
               <input
                 type="checkbox"
+                aria-label="Auto-play videos"
                 checked={props.videoAutoPlay}
                 onChange={(e) => props.onChange("videoAutoPlay", e.target.checked)}
               />
@@ -134,6 +135,7 @@ export function ViewingPanel(props: {
             <label className="toggle-switch">
               <input
                 type="checkbox"
+                aria-label="Loop videos"
                 checked={props.videoLoop}
                 onChange={(e) => props.onChange("videoLoop", e.target.checked)}
               />
@@ -150,8 +152,8 @@ export function ViewingPanel(props: {
 
 const LAYOUT_OPTIONS = [
   { id: "grid", label: "Grid" },
-  { id: "filmstrip", label: "Filmstrip" },
-  { id: "overview", label: "Overview" },
+  { id: "details", label: "Details" },
+  { id: "timeline", label: "Timeline" },
 ] as const;
 
 const THUMBNAIL_SIZES = [

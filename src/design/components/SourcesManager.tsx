@@ -15,6 +15,7 @@ export function SourcesManager(props: {
   const { variant = "inline", onAddFolder, onRemoveFolder, onFilterSource, onRescan } = props;
   const folders = useLibraryStore((s) => s.folders);
   const activeSource = useLibraryStore((s) => s.activeSource);
+  const libraryBusy = useLibraryStore((s) => s.busy);
   const setActiveSource = useLibraryStore((s) => s.setActiveSource);
   const [query, setQuery] = useState("");
   const [menu, setMenu] = useState<{ folder: LibraryFolder; x: number; y: number } | null>(null);
@@ -74,13 +75,19 @@ export function SourcesManager(props: {
           )}
         </div>
         <div className="sources-summary-actions">
-          <button className="primary-button" type="button" onClick={() => onAddFolder?.()}>
+          <button className="primary-button" type="button" onClick={() => onAddFolder?.()} disabled={!onAddFolder}>
             <PlusIcon size={14} />
             Add Source
           </button>
           {onRescan && (
-            <button className="secondary-button" type="button" onClick={() => onRescan()}>
-              Rescan Sources
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() => onRescan()}
+              disabled={libraryBusy || folders.length === 0}
+              title={folders.length === 0 ? "Add a source before rescanning" : undefined}
+            >
+              {libraryBusy ? "Working…" : "Rescan Sources"}
             </button>
           )}
         </div>
@@ -112,6 +119,7 @@ export function SourcesManager(props: {
         </div>
       ) : (
         <table className="sources-table">
+          <caption className="sources-sr-only">Library sources</caption>
           <thead>
             <tr>
               <th scope="col">Source</th>
@@ -137,6 +145,7 @@ export function SourcesManager(props: {
                           type="button"
                           className="sources-path"
                           title={folder.path}
+                          aria-label={`Reveal ${folder.path} in Finder`}
                           onClick={() => reveal(folder)}
                         >
                           {compactPath(folder.path)}

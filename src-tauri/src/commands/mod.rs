@@ -214,10 +214,6 @@ pub struct PartialSettings {
     pub pair_raw_jpeg: Option<bool>,
     pub stack_bursts: Option<bool>,
     pub stack_live_photos: Option<bool>,
-    pub strip_gps_on_export: Option<bool>,
-    pub strip_all_metadata_on_export: Option<bool>,
-    pub allow_network_requests: Option<bool>,
-    pub send_crash_reports: Option<bool>,
     pub max_cache_size_gb: Option<i32>,
     pub thumbnail_quality: Option<i32>,
     pub enable_debug_logging: Option<bool>,
@@ -248,10 +244,6 @@ pub struct AppSettings {
     pub pair_raw_jpeg: bool,
     pub stack_bursts: bool,
     pub stack_live_photos: bool,
-    pub strip_gps_on_export: bool,
-    pub strip_all_metadata_on_export: bool,
-    pub allow_network_requests: bool,
-    pub send_crash_reports: bool,
     pub max_cache_size_gb: i32,
     pub thumbnail_quality: i32,
     pub enable_debug_logging: bool,
@@ -270,7 +262,7 @@ impl Default for AppSettings {
             open_last_folder: true,
             restore_window_state: true,
             default_layout: "grid".to_string(),
-            thumbnail_size: "medium".to_string(),
+            thumbnail_size: "small".to_string(),
             viewer_zoom_behavior: "fit".to_string(),
             slideshow_interval: 5,
             slideshow_shuffle: false,
@@ -282,10 +274,6 @@ impl Default for AppSettings {
             pair_raw_jpeg: true,
             stack_bursts: true,
             stack_live_photos: true,
-            strip_gps_on_export: true,
-            strip_all_metadata_on_export: false,
-            allow_network_requests: false,
-            send_crash_reports: false,
             max_cache_size_gb: 5,
             thumbnail_quality: 80,
             enable_debug_logging: false,
@@ -1695,10 +1683,6 @@ fn apply_setting(settings: &mut AppSettings, key: &str, value: &str) {
         "pair_raw_jpeg" => settings.pair_raw_jpeg = value.parse().unwrap_or(true),
         "stack_bursts" => settings.stack_bursts = value.parse().unwrap_or(true),
         "stack_live_photos" => settings.stack_live_photos = value.parse().unwrap_or(true),
-        "strip_gps_on_export" => settings.strip_gps_on_export = value.parse().unwrap_or(true),
-        "strip_all_metadata_on_export" => settings.strip_all_metadata_on_export = value.parse().unwrap_or(false),
-        "allow_network_requests" => settings.allow_network_requests = value.parse().unwrap_or(false),
-        "send_crash_reports" => settings.send_crash_reports = value.parse().unwrap_or(false),
         "max_cache_size_gb" => settings.max_cache_size_gb = value.parse().unwrap_or(5),
         "thumbnail_quality" => settings.thumbnail_quality = value.parse().unwrap_or(80),
         "enable_debug_logging" => settings.enable_debug_logging = value.parse().unwrap_or(false),
@@ -1762,10 +1746,6 @@ pub async fn save_settings(patch: PartialSettings, state: State<'_, AppState>) -
     if let Some(v) = patch.pair_raw_jpeg { settings.pair_raw_jpeg = v; }
     if let Some(v) = patch.stack_bursts { settings.stack_bursts = v; }
     if let Some(v) = patch.stack_live_photos { settings.stack_live_photos = v; }
-    if let Some(v) = patch.strip_gps_on_export { settings.strip_gps_on_export = v; }
-    if let Some(v) = patch.strip_all_metadata_on_export { settings.strip_all_metadata_on_export = v; }
-    if let Some(v) = patch.allow_network_requests { settings.allow_network_requests = v; }
-    if let Some(v) = patch.send_crash_reports { settings.send_crash_reports = v; }
     if let Some(v) = patch.max_cache_size_gb { settings.max_cache_size_gb = v; }
     if let Some(v) = patch.thumbnail_quality { settings.thumbnail_quality = v; }
     if let Some(v) = patch.enable_debug_logging { settings.enable_debug_logging = v; }
@@ -1793,10 +1773,6 @@ pub async fn save_settings(patch: PartialSettings, state: State<'_, AppState>) -
         ("pair_raw_jpeg", settings.pair_raw_jpeg.to_string()),
         ("stack_bursts", settings.stack_bursts.to_string()),
         ("stack_live_photos", settings.stack_live_photos.to_string()),
-        ("strip_gps_on_export", settings.strip_gps_on_export.to_string()),
-        ("strip_all_metadata_on_export", settings.strip_all_metadata_on_export.to_string()),
-        ("allow_network_requests", settings.allow_network_requests.to_string()),
-        ("send_crash_reports", settings.send_crash_reports.to_string()),
         ("max_cache_size_gb", settings.max_cache_size_gb.to_string()),
         ("thumbnail_quality", settings.thumbnail_quality.to_string()),
         ("enable_debug_logging", settings.enable_debug_logging.to_string()),

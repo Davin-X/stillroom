@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo, memo } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { save, open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { currentMonitor, getCurrentWindow, LogicalSize, PhysicalPosition } from "@tauri-apps/api/window";
@@ -1164,6 +1163,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
 
       <div className={`app-body ${library.sidebarOpen ? "sidebar-open" : "sidebar-closed"}`}>
         <aside className="sidebar">
+          <div className="sidebar-scroll">
           <div className="sidebar-header">
             <div className="sidebar-label">WORKSPACE</div>
             <nav className="primary-nav" aria-label="Main navigation">
@@ -1278,6 +1278,14 @@ handlersRef.current = { importFolder, importFiles, showNotice };
                 </span>
               </div>
             </div>
+          </div>
+          </div>
+          <div className="sidebar-footer">
+            <span className="sidebar-health">
+              <span className="health-dot" aria-hidden="true" />
+              Storage Healthy
+            </span>
+            <span className="sidebar-version">v0.1.0</span>
           </div>
         </aside>
 
@@ -2576,7 +2584,7 @@ function LibraryScreen(props: any) {
   };
 
   const tileClass = (item: any) =>
-    `gallery-tile${props.inspectedId === item.id ? " inspected" : ""}${props.selectedIds.includes(item.id) ? " selected" : ""}${masked(item) ? " hidden-obscured" : ""}`;
+    `gallery-tile${props.inspectedId === item.id ? " inspected" : ""}${props.selectedIds.includes(item.id) ? " selected" : ""}${item.favorite ? " is-favorite" : ""}${masked(item) ? " hidden-obscured" : ""}`;
 
   // Right-clicking a photo is the most direct place to manage its album
   // membership. The picker itself carries the album list and search.
@@ -2670,14 +2678,16 @@ function LibraryScreen(props: any) {
             <header className="library-header-row">
               <div className="header-left">
                 <p className="eyebrow">{props.hiddenView ? "OUT OF THE GALLERY" : "YOUR COLLECTION"}</p>
-                <h1>{props.hiddenView ? "Hidden" : "All Photos"}</h1>
-                <p className="page-subtitle">
-                  {props.items.length.toLocaleString()} shown ·{" "}
-                  {props.hiddenView
-                    ? `${(props.hiddenCount || 0).toLocaleString()} hidden`
-                    : `${(library.items.length - library.hiddenCount).toLocaleString()} in library`}
-                  {!props.hiddenView && props.hiddenCount ? ` · ${props.hiddenCount.toLocaleString()} hidden` : ""}
-                </p>
+                <div className="header-title-row">
+                  <h1>{props.hiddenView ? "Hidden" : "All Photos"}</h1>
+                  <p className="page-subtitle">
+                    {props.items.length.toLocaleString()} shown ·{" "}
+                    {props.hiddenView
+                      ? `${(props.hiddenCount || 0).toLocaleString()} hidden`
+                      : `${(library.items.length - library.hiddenCount).toLocaleString()} in library`}
+                    {!props.hiddenView && props.hiddenCount ? ` · ${props.hiddenCount.toLocaleString()} hidden` : ""}
+                  </p>
+                </div>
               </div>
               <div className="header-actions">
                 <button
@@ -2706,11 +2716,10 @@ function LibraryScreen(props: any) {
                         ))}
                       </select>
                     </label>
-                    <div className="action-divider" aria-hidden="true" />
-                    <button className="primary-button" type="button" onClick={() => props.onImportFolder?.()} disabled={props.busy} title="Open folder (⌘O)" aria-label="Open folder">
+                    <button className="quiet-button" type="button" onClick={() => props.onImportFolder?.()} disabled={props.busy} title="Open folder (⌘O)" aria-label="Open folder">
                       <FolderIcon size={15} /><span className="btn-label">Open folder</span>
                     </button>
-                    <button className="quiet-button" type="button" onClick={() => props.onImportFiles?.()} disabled={props.busy} title="Add files (⌘I)" aria-label="Add files">
+                    <button className="primary-button" type="button" onClick={() => props.onImportFiles?.()} disabled={props.busy} title="Add files (⌘I)" aria-label="Add files">
                       <PlusIcon size={15} /><span className="btn-label">Add files</span>
                     </button>
                   </>
@@ -2787,27 +2796,35 @@ function LibraryScreen(props: any) {
                   );
                 })()}
               </div>
-              <div className="filter-cluster">
-                <span className="smart-label">SHOW</span>
-                {(["All", "Photos", "Videos", "RAW", "Favorites"] as string[]).map((f) => {
-                  const count = filterCounts[f as keyof typeof filterCounts] ?? 0;
-                  return (
-                    <button key={f} type="button" className={`quick-filter ${props.filter === f ? "active" : ""}`} onClick={() => props.onChangeFilter(f)}>
-                      {f}
-                      <span className="filter-count">{count}</span>
-                    </button>
-                  );
-                })}
-              </div>
             </div>
+          </div>
+
+          <div className="filter-cluster">
+            <span className="smart-label">SHOW</span>
+            {(["All", "Photos", "Videos", "RAW", "Favorites"] as string[]).map((f) => {
+              const count = filterCounts[f as keyof typeof filterCounts] ?? 0;
+              return (
+                <button key={f} type="button" className={`quick-filter ${props.filter === f ? "active" : ""}`} onClick={() => props.onChangeFilter(f)}>
+                  {f}
+                  <span className="filter-count">{count}</span>
+                </button>
+              );
+            })}
+            <span className="sort-hint">Sorted by <strong>Date captured</strong></span>
           </div>
 
           {props.selectedIds.length > 0 && (
             <div className="selection-bar" role="toolbar" aria-label="Selection actions">
-              <span className="selection-bar-count">
-                {props.selectedIds.length.toLocaleString()} selected
-              </span>
-              <span className="selection-bar-divider" aria-hidden="true" />
+              <div className="selection-bar-left">
+                <span className="selection-bar-count">
+                  {props.selectedIds.length.toLocaleString()} selected
+                </span>
+                <span className="selection-bar-divider" aria-hidden="true" />
+                <span className="selection-bar-size">
+                  {formatBytesSimple(selectedItems.reduce((sum: number, item: any) => sum + (item.size || 0), 0))} selected
+                </span>
+              </div>
+              <div className="selection-bar-actions">
               <button
                 type="button"
                 className="selection-bar-action"
@@ -2862,14 +2879,16 @@ function LibraryScreen(props: any) {
                   <BatchIcon size={13} /> Batch
                 </button>
               )}
+              <span className="selection-bar-divider" aria-hidden="true" />
               <button
                 type="button"
-                className="selection-bar-action"
+                className="selection-bar-action selection-bar-clear"
                 onClick={() => props.onClearSelection?.()}
                 title="Clear selection (inspection is kept)"
               >
                 Clear
               </button>
+              </div>
             </div>
           )}
         </header>
@@ -2893,12 +2912,16 @@ function LibraryScreen(props: any) {
                     <article key={item.id} className={tileClass(item)} onContextMenu={(e: any) => { concealItem(item.id); props.onContextMenu(itemContextMenu(item), e); }}>
                       <div className="tile-select-check">
                         <input type="checkbox" checked={props.selectedIds.includes(item.id)} onChange={() => props.onToggleSelect(item.id)} title={props.selectedIds.includes(item.id) ? "Remove from selection" : "Add to selection"} onClick={(e: any) => e.stopPropagation()} />
+                        <CheckIcon size={12} />
                       </div>
                       <button type="button" className="tile-open-button" onClick={(e) => handleTileClick(item, e)} onDoubleClick={() => handleTileDoubleClick(item)} {...holdHandlers(item.id)}>
                         <span className="tile-image">
                           {item.kind === "video" ? <VideoThumb src={assetUrl(item.path)} name={tileAlt(item)} /> : item.kind === "photo" ? <img src={assetUrl(item.path)} alt={tileAlt(item)} loading="lazy" style={draftImageStyle(draftTransforms, item.id)} /> : <span className="raw-tile"><KindBadge kind={item.kind} /></span>}
                           {item.kind === "video" && <span className="video-label"><PlayIcon size={10} /></span>}
                           {item.kind === "raw" && <span className="format-label"><KindBadge kind={item.kind} /></span>}
+                          {item.favorite && !masked(item) ? (
+                            <span className="tile-favorite" aria-label="Favorite"><HeartIcon size={11} filled /></span>
+                          ) : null}
                         </span>
                         <span className={`tile-caption${masked(item) ? " hidden-caption" : ""}`}>
                                 <b>{item.name}</b>
@@ -2927,12 +2950,16 @@ function LibraryScreen(props: any) {
                           <article key={item.id} className={tileClass(item)} onContextMenu={(e: any) => { concealItem(item.id); props.onContextMenu(itemContextMenu(item), e); }}>
                             <div className="tile-select-check">
                               <input type="checkbox" checked={props.selectedIds.includes(item.id)} onChange={() => props.onToggleSelect(item.id)} title={props.selectedIds.includes(item.id) ? "Remove from selection" : "Add to selection"} onClick={(e: any) => e.stopPropagation()} />
+                        <CheckIcon size={12} />
                             </div>
                             <button type="button" className="tile-open-button" onClick={(e) => handleTileClick(item, e)} onDoubleClick={() => handleTileDoubleClick(item)} {...holdHandlers(item.id)}>
                               <span className="tile-image">
                                 {item.kind === "video" ? <VideoThumb src={assetUrl(item.path)} name={tileAlt(item)} /> : item.kind === "photo" ? <img src={assetUrl(item.path)} alt={tileAlt(item)} loading="lazy" style={draftImageStyle(draftTransforms, item.id)} /> : <span className="raw-tile"><KindBadge kind={item.kind} /></span>}
                                 {item.kind === "video" && <span className="video-label"><PlayIcon size={10} /></span>}
                                 {item.kind === "raw" && <span className="format-label"><KindBadge kind={item.kind} /></span>}
+                          {item.favorite && !masked(item) ? (
+                            <span className="tile-favorite" aria-label="Favorite"><HeartIcon size={11} filled /></span>
+                          ) : null}
                               </span>
                               <span className={`tile-caption${masked(item) ? " hidden-caption" : ""}`}>
                                   <b>{item.name}</b>
@@ -2958,12 +2985,16 @@ function LibraryScreen(props: any) {
                   <article key={item.id} className={tileClass(item)} onContextMenu={(e: any) => { concealItem(item.id); props.onContextMenu(itemContextMenu(item), e); }}>
                     <div className="tile-select-check">
                       <input type="checkbox" checked={props.selectedIds.includes(item.id)} onChange={() => props.onToggleSelect(item.id)} title={props.selectedIds.includes(item.id) ? "Remove from selection" : "Add to selection"} onClick={(e: any) => e.stopPropagation()} />
+                        <CheckIcon size={12} />
                     </div>
                     <button type="button" className="tile-open-button" onClick={(e) => handleTileClick(item, e)} onDoubleClick={() => handleTileDoubleClick(item)} {...holdHandlers(item.id)}>
                       <span className="tile-image">
                         {item.kind === "video" ? <VideoThumb src={assetUrl(item.path)} name={tileAlt(item)} /> : item.kind === "photo" ? <img src={assetUrl(item.path)} alt={tileAlt(item)} loading="lazy" style={draftImageStyle(draftTransforms, item.id)} /> : <span className="raw-tile"><KindBadge kind={item.kind} /></span>}
                         {item.kind === "video" && <span className="video-label"><PlayIcon size={10} /></span>}
                         {item.kind === "raw" && <span className="format-label"><KindBadge kind={item.kind} /></span>}
+                          {item.favorite && !masked(item) ? (
+                            <span className="tile-favorite" aria-label="Favorite"><HeartIcon size={11} filled /></span>
+                          ) : null}
                       </span>
                       <span className={`tile-caption${masked(item) ? " hidden-caption" : ""}`}>
                                 <b>{item.name}</b>
@@ -2985,6 +3016,19 @@ function LibraryScreen(props: any) {
               </button>
             </div>
           )}
+        </div>
+        <div className="library-footer-status">
+          <span>Showing <strong>{props.items.length}</strong> items</span>
+          <span>·</span>
+          <span>Selected total: <strong>{(() => {
+            const sel = props.items.filter((i:any) => props.selectedIds.includes(i.id));
+            const bytes = sel.reduce((a:any,i:any)=>a+(i.size||0),0);
+            return bytes > 1024*1024 ? (bytes/1024/1024).toFixed(1)+' MB' : (bytes/1024).toFixed(0)+' KB';
+          })()}</strong></span>
+          <span className="footer-badges">
+            <span className="footer-badge">GPU Accelerated</span>
+            <span className="footer-badge">COLOR: Display P3</span>
+          </span>
         </div>
       </section>
 
@@ -3019,6 +3063,7 @@ function LibraryScreen(props: any) {
                       <span className="raw-tile"><KindBadge kind={sel.kind} /></span>
                     )}
                     <span>Double-click to view</span>
+                    <span className="inspector-type-badge">{sel.kind === "video" ? "Video" : sel.kind === "raw" ? "RAW" : "Photo"}</span>
                   </button>
                   <div className="inspector-actions">
                     <button
@@ -3042,7 +3087,7 @@ function LibraryScreen(props: any) {
                       onClick={() => props.onToggleSelect(sel.id)}
                       title={isSelected ? "Remove from selection" : "Add to selection"}
                     >
-                      <PlusIcon size={14} />
+                      {isSelected ? <CheckIcon size={14} /> : <PlusIcon size={14} />}
                       <span>{isSelected ? "Selected" : "Select"}</span>
                     </button>
                   </div>

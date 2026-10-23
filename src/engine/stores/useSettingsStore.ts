@@ -149,7 +149,7 @@ export function applyTheme(settings: Pick<AppSettings, "appearance" | "accentCol
 
   frame.classList.toggle("dark", isDark);
   const base = resolveAccent(settings.accentColor, isDark);
-  const surface = isDark ? "#171c23" : "#ffffff";
+  const surface = isDark ? "#0b0d12" : "#ffffff";
   // Push the accent away from the surface so it reads as a distinct hue:
   // darken for light mode, lighten for dark mode.
   const toward = isDark ? "#ffffff" : "#000000";
@@ -195,7 +195,7 @@ export function applyTheme(settings: Pick<AppSettings, "appearance" | "accentCol
 // the swatch shown in Settings matches the color that will actually be applied
 // to the running theme.
 export const ACCENT_PALETTE: { id: string; label: string; light: string; dark: string }[] = [
-  { id: "blue", label: "Blue", light: "#3474d4", dark: "#8ab4ff" },
+  { id: "blue", label: "Blue", light: "#3474d4", dark: "#3b82f6" },
   { id: "purple", label: "Purple", light: "#8254ea", dark: "#b79bff" },
   { id: "green", label: "Green", light: "#27845f", dark: "#6bc69a" },
   { id: "orange", label: "Orange", light: "#dd6b16", dark: "#f0a45c" },

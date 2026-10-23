@@ -97,7 +97,6 @@ interface LibraryState {
   setHiddenForIds: (ids: string[], hidden: boolean) => Promise<void>;
   updateItemTags: (id: string, tags: string[]) => Promise<void>;
   deleteItems: (ids: string[]) => Promise<void>;
-  exportItems: (ids: string[], options?: ExportOptions) => Promise<void>;
 
   // Actions - Albums
   createAlbum: (name: string, itemIds?: string[]) => Promise<void>;
@@ -114,14 +113,6 @@ interface LibraryState {
   setBusy: (busy: boolean) => void;
   setProgress: (progress: LibraryState["progress"]) => void;
   showNotice: (text: string) => void;
-}
-
-interface ExportOptions {
-  format?: "jpeg" | "png" | "webp" | "heic" | "avif" | "source";
-  quality?: number;
-  stripMetadata?: boolean;
-  pattern?: string;
-  outputFolder?: string;
 }
 
 function computeDerived(state: LibraryState) {
@@ -540,12 +531,6 @@ export const useLibraryStore = create<LibraryState>()(
           inspectedId: s.inspectedId && ids.includes(s.inspectedId) ? null : s.inspectedId,
         }));
         get().refreshDerived();
-      },
-
-      exportItems: async (ids, options = {}) => {
-        const items = get().items.filter((i) => ids.includes(i.id));
-        // TODO: Implement batch export via tauri.batch.export
-        get().showNotice(`Export ${items.length} items`);
       },
 
       // Albums

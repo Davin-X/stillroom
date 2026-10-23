@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 - Details and Timeline library views, including sortable details columns and timeline group selection
 - Sources manager actions for filtering, rescanning, revealing, and removing indexed folders
+- Multi-folder source selection from the native folder picker
+- Visible progress for duplicate hashing, including candidate counts, bytes read, and current file
+- Cooperative cancel controls for folder scans, file imports, and duplicate hashing
 
 ### Changed
 - Refined the top bar, compact navigation, source controls, and destructive settings section
@@ -16,12 +19,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Built the browser harness as a second Vite entry so it also works with `npm run preview`
 - Improved Viewer navigation and filmstrip behavior, with media fit respecting image aspect ratios
 - Refreshed the app and in-app brand marks; added native macOS and Windows icon bundle assets
+- Reduced idle work during window resizing and removed automatic periodic source scans
+- Reduced edit-picker work for large libraries by avoiding per-photo draft reads and loading thumbnails lazily
+- Avoided re-reading unchanged media during regular scans; explicit rebuilds still inspect every file
+- Limited duplicate hashing to one file at a time to reduce disk contention on large libraries
 
 ### Fixed
 - Slideshow video playback now advances on the video's ended event and follows play/pause state
 - Inspector toggle uses the inspector icon and remains available in narrow windows
 - Hidden item details stay concealed in the inspector until the preview is revealed
 - Removed unused panel imports, props, CSS rules, and frontend dependencies
+- Fixed source-picker errors and made warnings visible above the panel that triggered them
+- Fixed multi-folder selection registering all selected folders in a single pass
 
 ## [0.1.0] — 2026-10-19
 

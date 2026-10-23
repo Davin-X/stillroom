@@ -71,6 +71,20 @@ export function useDraftTransforms(): Map<string, DraftTransform> {
   }, [revision]);
 }
 
+/** List draft-backed items without reading and parsing every stored draft. */
+export function useDraftIds(): Set<string> {
+  const revision = useSyncExternalStore(subscribeDraft, () => draftRevision, () => draftRevision);
+  return useMemo(() => {
+    const ids = new Set<string>();
+    if (typeof localStorage === "undefined") return ids;
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (key?.startsWith("edit:draft:")) ids.add(key.slice("edit:draft:".length));
+    }
+    return ids;
+  }, [revision]);
+}
+
 export function draftTransformStyle(transform?: DraftTransform) {
   if (!transform || (!transform.rotation && !transform.flip)) return undefined;
   return `rotate(${transform.rotation}deg) scaleX(${transform.flip ? -1 : 1})`;

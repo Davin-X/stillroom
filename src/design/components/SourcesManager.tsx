@@ -68,14 +68,12 @@ export function SourcesManager(props: {
             <span className="sources-summary-dot" aria-hidden="true">·</span>
             {formatBytes(totalSize)}
           </span>
-          {variant === "sheet" && (
-            <span className="sources-summary-hint">
-              Files are read in place — nothing is copied or moved.
-            </span>
-          )}
+          <span className="sources-summary-hint">
+            Files stay in place. Select multiple folders with ⌘-click or ⌘A; they scan together.
+          </span>
         </div>
         <div className="sources-summary-actions">
-          <button className="primary-button" type="button" onClick={() => onAddFolder?.()} disabled={!onAddFolder}>
+          <button className="primary-button" type="button" onClick={() => onAddFolder?.()} disabled={!onAddFolder} title="Select multiple folders with ⌘-click or ⌘A">
             <PlusIcon size={14} />
             Add Source
           </button>
@@ -118,6 +116,7 @@ export function SourcesManager(props: {
           <span>Try a different search term.</span>
         </div>
       ) : (
+        <div className="sources-table-viewport">
         <table className="sources-table">
           <caption className="sources-sr-only">Library sources</caption>
           <thead>
@@ -185,6 +184,7 @@ export function SourcesManager(props: {
             })}
           </tbody>
         </table>
+        </div>
       )}
 
       {menu && (

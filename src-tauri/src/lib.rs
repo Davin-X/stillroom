@@ -142,6 +142,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // Library
             scan_library,
+            cancel_scan,
             import_files,
             get_library_items,
             get_albums,

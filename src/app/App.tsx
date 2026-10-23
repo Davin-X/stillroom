@@ -14,6 +14,7 @@ import {
   useThumbnailSize,
   applyTheme,
   useDraftTransforms,
+  useDraftIds,
   draftTransformStyle,
   clearEditDraft,
   type DraftTransform,
@@ -86,6 +87,10 @@ function describeError(error: unknown): string {
   } catch {
     return String(error);
   }
+}
+
+function isWarningNotice(text: string): boolean {
+  return /failed|could not|cannot access|not a folder|could not read|no media files found|no supported media/i.test(text);
 }
 
 /** Modifier glyph for the "focus search" hint - Command on macOS, Ctrl elsewhere. */
@@ -199,42 +204,6 @@ function App() {
     }
     return stats;
   }, [library.items]);
-
-  // Auto re-import known sources on startup so files restored from Trash (or
-  // added externally) are picked up without a manual scan.
-  useEffect(() => {
-    let cancelled = false;
-    const run = async () => {
-      try {
-        await library.loadFolders();
-        const folders = useLibraryStore.getState().folders;
-        if (!folders.length) return;
-        library.setBusy(true);
-        library.setProgress({ phase: "scanning", processed: 0, total: 0 });
-        for (const folder of folders) {
-          if (cancelled) break;
-          await tauri.library.scan(folder.path);
-        }
-        await library.loadLibrary();
-        await library.loadFolders();
-      } catch (e) {
-        console.error("Auto re-import failed:", e);
-      } finally {
-        if (!cancelled) {
-          library.setBusy(false);
-          library.setProgress(null);
-        }
-      }
-    };
-    void run();
-    const interval = window.setInterval(() => {
-      if (!cancelled) void run();
-    }, 5 * 60 * 1000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, []);
 
   const viewer = useViewerStore();
   const edit = useEditStore();
@@ -436,7 +405,7 @@ function App() {
     folderInputRef.current?.setAttribute("webkitdirectory", "");
     folderInputRef.current?.setAttribute("directory", "");
 
-    // Load persisted data exactly once on mount.
+    // Opening the saved catalog is cheap; source scans are always user-started.
     liveRef.current.library.loadLibrary();
     liveRef.current.settings.hydrate();
 
@@ -461,10 +430,22 @@ function App() {
       await register("menu-check-updates", () => handlersRef.current.showNotice("Check for updates - coming soon"));
 
       // Listen for native import progress events from scan/import commands.
-      const unlistenProgress = await events.onImportProgress(({ phase, processed, total }) => {
+      const unlistenProgress = await events.onImportProgress((progress) => {
+        const { phase, processed, total } = progress;
         liveRef.current.library.setBusy(true);
-        liveRef.current.library.setProgress({ phase, processed, total });
-        if (processed >= total && total > 0) {
+        liveRef.current.library.setProgress({
+          phase,
+          processed,
+          total,
+          bytesProcessed: progress.bytesProcessed,
+          bytesTotal: progress.bytesTotal,
+          filesProcessed: progress.filesProcessed,
+          filesTotal: progress.filesTotal,
+          currentFile: progress.currentFile,
+        });
+        // Hashing still has a short database/grouping step after the final
+        // progress event; keep its controls disabled until the command returns.
+        if (processed >= total && total > 0 && phase !== "hashing") {
           liveRef.current.library.setBusy(false);
           liveRef.current.library.setProgress(null);
         }
@@ -844,6 +825,15 @@ function App() {
       library.setBusy(true);
       library.setProgress({ phase: "importing", processed: 0, total: paths.length });
       const result = await tauri.library.importFiles(paths);
+      if (result.cancelled) {
+        if (result.items.length) await tauri.albums.addItems(albumId, result.items.map((item: any) => item.id));
+        await library.loadLibrary();
+        library.setActiveAlbum(albumId);
+        library.setBusy(false);
+        library.setProgress(null);
+        showNotice(`Import cancelled. Kept ${result.items.length.toLocaleString()} item(s) already imported.`);
+        return;
+      }
       if (!result.items.length) {
         library.setBusy(false);
         library.setProgress(null);
@@ -923,31 +913,32 @@ function App() {
     };
   }, [screen, library.activeAlbum]);
 
-  // Force WebKit to relayout during macOS live window drags. The vh unit and
-  // backing store don't update continuously while dragging a window edge,
-  // exposing the native window background. Reading offsetHeight in a rAF loop
-  // whenever the inner size changes triggers a layout pass so .app-frame
-  // (position: fixed; inset: 0) tracks the real viewport edges.
+  // Force WebKit to relayout during macOS live window drags without running an
+  // animation-frame loop while the window is idle.
   useEffect(() => {
     let raf: ReturnType<typeof requestAnimationFrame> | null = null;
     let prevW = window.innerWidth;
     let prevH = window.innerHeight;
 
-    const loop = () => {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      if (w !== prevW || h !== prevH) {
-        prevW = w;
-        prevH = h;
-        // Force a synchronous layout read so WebKit recalculates the viewport.
-        void document.documentElement.offsetHeight;
-      }
-      raf = requestAnimationFrame(loop);
+    const onResize = () => {
+      if (raf !== null) return;
+      raf = requestAnimationFrame(() => {
+        raf = null;
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        if (w !== prevW || h !== prevH) {
+          prevW = w;
+          prevH = h;
+          // Force a synchronous layout read so WebKit recalculates the viewport.
+          void document.documentElement.offsetHeight;
+        }
+      });
     };
-    raf = requestAnimationFrame(loop);
+    window.addEventListener("resize", onResize, { passive: true });
 
     return () => {
-      if (raf) cancelAnimationFrame(raf);
+      window.removeEventListener("resize", onResize);
+      if (raf !== null) cancelAnimationFrame(raf);
     };
   }, []);
 
@@ -1056,7 +1047,9 @@ const importFiles = async () => {
     library.setBusy(false);
     library.setProgress(null);
     showNotice(
-      result.items.length
+      result.cancelled
+        ? `Import cancelled. Kept ${result.items.length.toLocaleString()} item(s) already imported.`
+        : result.items.length
         ? `Imported ${result.items.length.toLocaleString()} file(s).`
         : "No supported media files selected."
     );
@@ -1068,32 +1061,50 @@ const importFiles = async () => {
 };
 
 const importFolder = async () => {
-  // Pick the folder first, so a picker problem is never reported as a scan
-  // problem (and a genuine cancel stays silent).
-  let rootPath: string;
+  let selectedPaths: string[];
   try {
-    const selected = await openFileDialog({ directory: true, multiple: false });
+    const selected = await openFileDialog({
+      directory: true,
+      multiple: true,
+      title: "Choose source folders",
+    });
     if (!selected) return;
-    rootPath = Array.isArray(selected) ? selected[0] : selected;
+    selectedPaths = Array.isArray(selected) ? selected : [selected];
   } catch (e) {
     showNotice(`Could not open the folder picker: ${describeError(e)}`);
     return;
   }
+  if (!selectedPaths.length) return;
+
+  // Selecting a parent and one of its children would scan the child twice
+  // and register two overlapping sources. Keep only the outermost folders.
+  const rootPaths = [...new Set(selectedPaths)].sort().filter((path, _index, all) =>
+    !all.some((parent) => parent !== path && path.startsWith(`${parent.replace(/\/$/, "")}/`))
+  );
 
   try {
-    showNotice(`Scanning ${rootPath}…`);
+    showNotice(`Scanning ${rootPaths.length.toLocaleString()} source folder(s)…`);
     library.setBusy(true);
     library.setProgress({ phase: "scanning", processed: 0, total: 0 });
-    const result = await tauri.library.scan(rootPath);
+    let discoveredCount = 0;
+    let cancelled = false;
+    for (const rootPath of rootPaths) {
+      const result = await tauri.library.scan(rootPath);
+      discoveredCount += result.discoveredCount;
+      if (result.cancelled) {
+        cancelled = true;
+        break;
+      }
+    }
     await library.loadLibrary();
     await library.loadFolders();
     library.setBusy(false);
     library.setProgress(null);
-    showNotice(
-      result.items.length
-        ? `Imported ${result.items.length.toLocaleString()} ${result.items.length === 1 ? "item" : "items"} from ${rootPath}`
-        : "No media files found in that folder."
-    );
+    showNotice(cancelled
+      ? `Scan cancelled. Indexed ${discoveredCount.toLocaleString()} file(s) so far; you can resume by scanning these sources again.`
+      : discoveredCount
+        ? `Found ${discoveredCount.toLocaleString()} ${discoveredCount === 1 ? "media file" : "media files"} across ${rootPaths.length.toLocaleString()} source folder(s).`
+        : "No media files found in the selected folders.");
   } catch (e) {
     library.setBusy(false);
     library.setProgress(null);
@@ -1107,12 +1118,17 @@ const rescanSources = async () => {
     library.setProgress({ phase: "scanning", processed: 0, total: 0 });
     await library.loadFolders();
     const folders = useLibraryStore.getState().folders;
+    let cancelled = false;
     for (const folder of folders) {
-      await tauri.library.scan(folder.path);
+      const result = await tauri.library.scan(folder.path, true);
+      if (result.cancelled) {
+        cancelled = true;
+        break;
+      }
     }
     await library.loadLibrary();
     await library.loadFolders();
-    showNotice("Sources rescanned.");
+    showNotice(cancelled ? "Rescan cancelled. Completed work is saved; scan again to continue." : "Sources rescanned.");
   } catch (e) {
     showNotice(`Rescan failed: ${describeError(e)}`);
   } finally {
@@ -1146,7 +1162,11 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             if (screen === "Albums") return <span>Albums</span>;
             return <span>{screen}</span>;
           })()}
-          {library.busy && <span className="topbar-busy">Indexing…</span>}
+          {library.busy && (
+            <span className="topbar-busy">
+              {library.progress?.phase === "hashing" ? "Checking duplicates…" : "Indexing…"}
+            </span>
+          )}
         </div>
         <div className="topbar-actions">
           <button
@@ -1600,15 +1620,51 @@ handlersRef.current = { importFolder, importFiles, showNotice };
       </div>
 
       {library.busy && library.progress && (
-        <div className="busy-indicator" role="status">
+        <div className={`busy-indicator ${library.progress.phase === "hashing" ? "busy-indicator-hashing" : ""}`} role="status">
           <span className="spinner" />
-          {library.progress.phase} {library.progress.processed}/{library.progress.total}
+          {library.progress.phase === "hashing" ? (() => {
+            const bytesProcessed = library.progress.bytesProcessed ?? 0;
+            const bytesTotal = library.progress.bytesTotal ?? 0;
+            const filesProcessed = library.progress.filesProcessed ?? library.progress.processed;
+            const filesTotal = library.progress.filesTotal ?? library.progress.total;
+            const percent = bytesTotal > 0 ? Math.min(100, Math.round((bytesProcessed / bytesTotal) * 100)) : 0;
+            return (
+              <div className="busy-indicator-progress-copy">
+                <b>
+                  {bytesTotal > 0
+                    ? `Checking duplicates · ${percent}%`
+                    : filesTotal > 0 ? "Hashing candidates…" : "Finding duplicate candidates…"}
+                </b>
+                <small>
+                  {filesProcessed.toLocaleString()} of {filesTotal.toLocaleString()} candidate files
+                  {bytesTotal > 0 && ` · ${formatBytesSimple(bytesProcessed)} of ${formatBytesSimple(bytesTotal)}`}
+                </small>
+                <div className="busy-indicator-progress-track" role="progressbar" aria-label="Duplicate scan progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
+                  <span style={{ width: `${percent}%` }} />
+                </div>
+                {library.progress.currentFile && <small className="busy-indicator-current-file" title={library.progress.currentFile}>{library.progress.currentFile}</small>}
+              </div>
+            );
+          })() : `${library.progress.phase} ${library.progress.processed}/${library.progress.total}`}
+          <button
+            className="busy-indicator-cancel"
+            type="button"
+            onClick={() => void library.cancelScan()}
+            disabled={library.canceling}
+          >
+            {library.canceling ? "Cancelling…" : "Cancel"}
+          </button>
         </div>
       )}
 
       {library.notice && (
-        <div className="toast" role="status" onClick={() => library.showNotice("")}>
-          <span>✓</span>{library.notice}
+        <div
+          className={`toast ${isWarningNotice(library.notice) ? "toast-warning" : ""}`}
+          role={isWarningNotice(library.notice) ? "alert" : "status"}
+          aria-live={isWarningNotice(library.notice) ? "assertive" : "polite"}
+          onClick={() => library.showNotice("")}
+        >
+          <span aria-hidden="true">{isWarningNotice(library.notice) ? "!" : "✓"}</span>{library.notice}
         </div>
       )}
 
@@ -3581,18 +3637,29 @@ function ViewerScreen(props: any) {
 
 function EditScreen(props: any) {
   const [pickerQuery, setPickerQuery] = useState("");
+  const [pickerLimit, setPickerLimit] = useState(120);
   const [confirmReplace, setConfirmReplace] = useState(false);
   const [showOriginalPreview, setShowOriginalPreview] = useState(false);
   const [draftTrayOpen, setDraftTrayOpen] = useState(false);
   const draftTransforms = useDraftTransforms();
+  const draftIds = useDraftIds();
   const stageRef = useRef<any>(null);
   const [drag, setDrag] = useState<any>(null);
   const values = props.values || {};
   const hasAdjustments = Object.entries(initialEdits).some(([key, value]) => values[key] !== value);
   const crop = props.crop || { enabled:false, x:0,y:0,width:1,height:1 };
-  const savedDraftItems = (props.items || []).filter((item: any) => {
-    try { return !!localStorage.getItem(`edit:draft:${item.id}`); } catch { return false; }
-  });
+  const savedDraftItems = useMemo(
+    () => (props.items || []).filter((item: any) => draftIds.has(item.id)),
+    [props.items, draftIds],
+  );
+  const pickerItems = useMemo(() => {
+    const query = pickerQuery.trim().toLowerCase();
+    return (props.items || []).filter((item: any) =>
+      item.kind === "photo" &&
+      !draftIds.has(item.id) &&
+      (!query || String(item.name || "").toLowerCase().includes(query)),
+    );
+  }, [props.items, draftIds, pickerQuery]);
   const previewValues = showOriginalPreview ? initialEdits : values;
   const warmth = Number(previewValues.warmth || 0);
   const previewFilter = [
@@ -3603,6 +3670,7 @@ function EditScreen(props: any) {
     `hue-rotate(${warmth < 0 ? 180 : 0}deg)`,
   ].join(" ");
   useEffect(() => { setShowOriginalPreview(false); }, [props.item?.id]);
+  useEffect(() => { setPickerLimit(120); }, [pickerQuery]);
   useEffect(() => {
     if (!drag || !props.item) return;
     const onMove = (e: any) => {
@@ -3650,11 +3718,7 @@ function EditScreen(props: any) {
     props.onSetCrop({ aspectRatio: ratio, x: (1 - width) / 2, y: (1 - height) / 2, width, height });
   };
   if (!props.item) {
-    const filtered = (props.items || []).filter((it: any) => {
-      const hasDraft = (() => { try { return !!localStorage.getItem(`edit:draft:${it.id}`); } catch { return false; } })();
-      if (hasDraft) return false;
-      return !pickerQuery || String(it.name || "").toLowerCase().includes(pickerQuery.toLowerCase());
-    });
+    const filtered = pickerItems;
     const browse = async () => {
       try {
         const sel = await openFileDialog({ multiple: false, filters: [{ name: "Images", extensions: ["jpg","jpeg","png","webp","heic","heif","tif","tiff"] }] });
@@ -3673,12 +3737,12 @@ function EditScreen(props: any) {
           <button className="quiet-button" type="button" onClick={() => props.onBack?.()}>Back to Library</button>
           <div className="search-field" style={{ flex: 1 }}>
             <span className="search-icon"><SearchIcon size={15} /></span>
-            <input value={pickerQuery} onChange={(e) => setPickerQuery(e.target.value)} placeholder="Search photos..." aria-label="Search photos" />
+          <input value={pickerQuery} onChange={(e) => setPickerQuery(e.target.value)} placeholder="Search photos..." aria-label="Search photos" />
           </div>
           <button className="quiet-button" type="button" onClick={browse}>Browse from Finder…</button>
         </div>
         {(() => {
-          const drafts = (props.items || []).filter((it: any) => { try { return !!localStorage.getItem(`edit:draft:${it.id}`); } catch { return false; } });
+          const drafts = savedDraftItems.slice(0, 60);
           if (!drafts.length) return null;
           return (
             <div style={{ marginBottom: 16 }}>
@@ -3686,7 +3750,7 @@ function EditScreen(props: any) {
               <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8, marginBottom: 8 }}>
                 {drafts.map((item: any) => (
                   <button key={item.id} type="button" className="edit-picker-tile" style={{ minWidth: 140, width: 140 }} onClick={() => props.onOpenEdit?.(item)}>
-                    <img src={props.assetUrl(item.path)} alt={item.name} style={draftImageStyle(draftTransforms, item.id)} />
+                    <img src={props.assetUrl(item.path)} alt={item.name} loading="lazy" decoding="async" style={draftImageStyle(draftTransforms, item.id)} />
                     <span>{item.name}</span>
                     <span className="draft-badge">Draft</span>
                     <span className="draft-remove" onClick={(e) => { e.stopPropagation(); clearEditDraft(item.id); props.onNotice?.("Draft removed"); }} title="Remove draft">×</span>
@@ -3696,17 +3760,20 @@ function EditScreen(props: any) {
             </div>
           );
         })()}
-        {filtered.length>0 ? (<div className="edit-picker-grid">{filtered.map((item:any)=> {
-  const hasDraft = (() => { try { return !!localStorage.getItem(`edit:draft:${item.id}`); } catch { return false; } })();
+        {filtered.length>0 ? (<>
+          <div className="edit-picker-grid">{filtered.slice(0, pickerLimit).map((item:any)=> {
+  const hasDraft = draftIds.has(item.id);
   return (
     <button key={item.id} type="button" className="edit-picker-tile" onClick={()=>props.onOpenEdit?.(item)}>
-      <img src={props.assetUrl(item.path)} alt={item.name} style={draftImageStyle(draftTransforms, item.id)}/>
+      <img src={props.assetUrl(item.path)} alt={item.name} loading="lazy" decoding="async" style={draftImageStyle(draftTransforms, item.id)}/>
       <span>{item.name}</span>
       {hasDraft && <span className="draft-badge">Draft</span>}
       {hasDraft && <span className="draft-remove" onClick={(e) => { e.stopPropagation(); clearEditDraft(item.id); props.onNotice?.("Draft removed"); }} title="Remove draft">×</span>}
     </button>
   );
-})}</div>) : (<div className="viewer-empty-state"><div style={{ marginBottom: 16 }}><BrandMark size={56} /></div><h2>No photos found</h2><p>Import a folder or browse from disk.</p></div>) }
+})}</div>
+          {filtered.length > pickerLimit && <button className="quiet-button" type="button" style={{ marginTop: 12 }} onClick={() => setPickerLimit((limit) => limit + 120)}>Show more photos ({filtered.length - pickerLimit} remaining)</button>}
+        </>) : (<div className="viewer-empty-state"><div style={{ marginBottom: 16 }}><BrandMark size={56} /></div><h2>No photos found</h2><p>Import a folder or browse from disk.</p></div>) }
       </div>
     );
   }

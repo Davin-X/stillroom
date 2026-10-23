@@ -199,11 +199,17 @@ body {
      so the container adds none - otherwise global.css's 25px stacks up. */
   padding: 0;
   /* The nav + sources + library stats can be taller than a short window.
-     Scroll the sidebar itself instead of letting it push the app shell past
-     the window (which used to hide the topbar and leave a blank band). */
+     Scroll the inner .sidebar-scroll instead of the whole sidebar so the
+     footer stays pinned at the bottom. */
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+.sidebar-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  overscroll-behavior: contain;
 }
 
 .sidebar-header {
@@ -214,7 +220,6 @@ body {
 
 .sidebar-footer {
   flex: 0 0 auto;
-  margin-top: auto;
   padding: 16px 14px 15px;
   border-top: 1px solid var(--line);
 }

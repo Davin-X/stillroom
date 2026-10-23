@@ -153,6 +153,11 @@ kbd { padding: 2px 4px; border: 1px solid var(--line-strong); border-radius: 4px
 .visually-hidden { display: none; }
 .import-actions { display: flex; align-items: center; gap: 7px; }
 .quiet-button { display: inline-flex; align-items: center; justify-content: center; min-height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); font-size:12px; }
+.secondary-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); font-size: 12px; font-weight: 500; cursor: pointer; }
+.secondary-button:hover { background: var(--surface-3); border-color: var(--accent); }
+.danger-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 30px; padding: 0 10px; border: 1px solid transparent; border-radius: 6px; background: var(--red, #c0392b); color: #fff; font-size: 12px; font-weight: 600; cursor: pointer; }
+.danger-button:hover { filter: brightness(1.05); }
+.secondary-button:disabled,.danger-button:disabled { cursor: wait; opacity: .55; }
 .primary-button:disabled,.quiet-button:disabled { cursor: wait; opacity: .55; }
 .first-run { display: grid; min-height: 520px; place-content: center; justify-items: center; padding: 30px; text-align: center; }
 .first-run-art { position: relative; display: grid; width: 78px; height: 70px; margin-bottom: 19px; place-items: center; border: 1px solid var(--line); border-radius: 15px; background: linear-gradient(140deg,var(--blue-soft),var(--surface-2)); color: var(--accent-text); font-size: 35px; }
@@ -279,6 +284,10 @@ kbd { padding: 2px 4px; border: 1px solid var(--line-strong); border-radius: 4px
 .rule-line button { margin-left: auto; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--accent-text); font-size:13px; }
 .native-feature-badge { display: inline-block; justify-self: start; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface-2); color: var(--muted); font-size:13px; font-weight: 700; letter-spacing: .06em; }
 .finder-card > .native-feature-badge { justify-self: end; }
+.duplicate-batch-bar { display: flex; align-items: center; gap: 10px; margin: 12px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-2); }
+.duplicate-batch-bar span { color: var(--ink); font-size: 13px; font-weight: 600; margin-right: auto; }
+.duplicate-batch-bar button { padding: 6px 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--text); font-size: 12px; }
+.duplicate-batch-bar .danger-button { background: var(--red, #c0392b); color: #fff; border-color: transparent; }
 .duplicate-empty { min-height: 370px; border: 1px dashed var(--line-strong); border-radius: 9px; }
 .duplicate-result { margin-top: 15px; }
 .duplicate-nonimage { display: grid; height: 105px; place-items: center; background: var(--surface-3); color: var(--text); font-size:13px; }

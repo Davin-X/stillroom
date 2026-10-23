@@ -13,6 +13,7 @@ import type {
   ExportResult,
   BatchExportRequest,
   BatchExportResult,
+  BatchProgressEvent,
   DuplicateGroup,
   LibraryFolder,
   LibraryChangedEvent,
@@ -69,6 +70,9 @@ export const tauri = {
 
     revealInFinder: (path: string): Promise<void> =>
       invoke("reveal_in_finder", { path }),
+
+    openFolder: (path: string): Promise<void> =>
+      invoke("open_folder", { path }),
   },
 
   albums: {
@@ -110,6 +114,9 @@ export const tauri = {
   batch: {
     export: (request: BatchExportRequest): Promise<BatchExportResult> =>
       invoke("batch_export", { request }),
+
+    cancel: (): Promise<void> =>
+      invoke("cancel_batch_export"),
   },
 
   duplicates: {
@@ -160,6 +167,9 @@ export const events = {
 
   onThumbnailReady: (callback: (event: ThumbnailReadyEvent) => void) =>
     listen("thumbnail-ready", (e: any) => callback(e.payload)),
+
+  onBatchProgress: (callback: (event: BatchProgressEvent) => void) =>
+    listen("batch-progress", (e: any) => callback(e.payload)),
 };
 
 // Helper: Build thumbnail data URL from response

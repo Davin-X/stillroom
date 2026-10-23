@@ -4,11 +4,16 @@ use tauri::{State, Manager, Emitter, Window};
 use crate::{AppState, Database, models::*};
 use anyhow::Result;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use uuid::Uuid;
 use time::OffsetDateTime;
 use sqlx::{SqlitePool, Sqlite, QueryBuilder, Row};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use image::codecs::jpeg::JpegEncoder;
+use image::codecs::png::{CompressionType, FilterType, PngEncoder};
+use image::codecs::webp::WebPEncoder;
+use image::{DynamicImage, GenericImageView, ImageEncoder};
 use walkdir::WalkDir;
 
 // ===== Request/Response Types =====
@@ -138,12 +143,26 @@ pub struct BatchExportRequest {
     pub max_dimension: Option<u32>,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct BatchExportItem {
     pub id: String,
     pub source_path: String,
     pub index: u32,
+    /// `photo`, `video`, or `raw`. Optional so older callers still work.
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// Capture/modification time in milliseconds, used by the `{date}` token.
+    #[serde(default)]
+    pub date: Option<i64>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchExportProgress {
+    pub current: u32,
+    pub total: u32,
+    pub current_file: String,
 }
 
 #[derive(Serialize)]
@@ -152,6 +171,7 @@ pub struct BatchExportResult {
     pub exported: u32,
     pub failed: Vec<BatchExportError>,
     pub outputs: Vec<String>,
+    pub cancelled: bool,
 }
 
 #[derive(Serialize)]
@@ -1004,6 +1024,17 @@ pub async fn reveal_in_finder(path: String, state: State<'_, AppState>) -> Resul
 }
 
 #[tauri::command]
+pub async fn open_folder(path: String) -> Result<(), String> {
+    // Unlike `open -R` (which selects a file in its parent), this opens the
+    // folder itself in Finder. Used by Batch export results.
+    std::process::Command::new("open")
+        .arg(&path)
+        .status()
+        .map_err(|e| format!("Could not open {}: {}", path, e))?;
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn get_albums(state: State<'_, AppState>) -> Result<Vec<Album>, String> {
     let db = get_db(&state)?;
     let albums = sqlx::query_as::<_, Album>(&format!("{} ORDER BY a.created_at ASC", ALBUM_SELECT))
@@ -1126,10 +1157,416 @@ pub async fn render_edited(request: RenderRequest, state: State<'_, AppState>) -
     Err("Not implemented - use image crate".to_string())
 }
 
+/// Only one batch export runs at a time. The UI sets this flag; the worker
+/// stops at the next file boundary so the copy in progress is never half-written.
+static BATCH_CANCEL: AtomicBool = AtomicBool::new(false);
+
 #[tauri::command]
-pub async fn batch_export(request: BatchExportRequest, state: State<'_, AppState>) -> Result<BatchExportResult, String> {
-    let _ = (request, state);
-    Ok(BatchExportResult { exported: 0, failed: vec![], outputs: vec![] })
+pub async fn cancel_batch_export() -> Result<(), String> {
+    BATCH_CANCEL.store(true, Ordering::SeqCst);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn batch_export(app: tauri::AppHandle, request: BatchExportRequest) -> Result<BatchExportResult, String> {
+    // A new run always starts un-cancelled.
+    BATCH_CANCEL.store(false, Ordering::SeqCst);
+
+    let total = request.items.len() as u32;
+    if total == 0 {
+        return Err("Select at least one item to export.".to_string());
+    }
+
+    let folder = PathBuf::from(request.output_folder.trim());
+    if request.output_folder.trim().is_empty() {
+        return Err("Choose an output folder first.".to_string());
+    }
+    std::fs::create_dir_all(&folder)
+        .map_err(|e| format!("Could not create the output folder: {}", e))?;
+    if !folder.is_dir() {
+        return Err("The chosen output location is not a folder.".to_string());
+    }
+
+    // Decoding and encoding are CPU/disk bound; keep them off the async runtime.
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut outputs: Vec<String> = Vec::new();
+        let mut failed: Vec<BatchExportError> = Vec::new();
+        let mut used_names: HashSet<String> = HashSet::new();
+        let quality = (request.quality * 100.0).round().clamp(1.0, 100.0) as u8;
+        let mut cancelled = false;
+
+        for (position, item) in request.items.iter().enumerate() {
+            if BATCH_CANCEL.load(Ordering::SeqCst) {
+                cancelled = true;
+                break;
+            }
+
+            let label = Path::new(&item.source_path)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or(&item.source_path)
+                .to_string();
+
+            match export_batch_item(item, &request, &folder, quality, &mut used_names) {
+                Ok(path) => outputs.push(path.to_string_lossy().to_string()),
+                Err(error) => failed.push(BatchExportError {
+                    item_id: item.id.clone(),
+                    error,
+                }),
+            }
+
+            let _ = app.emit(
+                "batch-progress",
+                BatchExportProgress {
+                    current: position as u32 + 1,
+                    total,
+                    current_file: label,
+                },
+            );
+        }
+
+        let processed = (outputs.len() + failed.len()) as u32;
+        let _ = app.emit(
+            "batch-progress",
+            BatchExportProgress {
+                current: processed,
+                total,
+                current_file: String::new(),
+            },
+        );
+
+        Ok(BatchExportResult {
+            exported: outputs.len() as u32,
+            failed,
+            outputs,
+            cancelled,
+        })
+    })
+    .await
+    .map_err(|e| format!("Batch export stopped unexpectedly: {}", e))?
+}
+
+/// Replace characters macOS rejects in filenames and collapse whitespace.
+fn sanitize_batch_name(value: &str) -> String {
+    let cleaned: String = value
+        .chars()
+        .map(|c| match c {
+            '/' | '\\' | ':' => '-',
+            c if c.is_control() => '-',
+            c => c,
+        })
+        .collect();
+    let trimmed = cleaned
+        .trim()
+        .trim_matches('.')
+        .trim()
+        .to_string();
+    if trimmed.is_empty() {
+        "export".to_string()
+    } else {
+        trimmed
+    }
+}
+
+fn batch_output_extension(format: &str, source: &Path) -> String {
+    match format {
+        "jpeg" => "jpg".to_string(),
+        "png" => "png".to_string(),
+        "webp" => "webp".to_string(),
+        _ => source
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.to_ascii_lowercase())
+            .filter(|ext| !ext.is_empty())
+            .unwrap_or_else(|| "jpg".to_string()),
+    }
+}
+
+fn batch_date_label(ms: i64) -> String {
+    OffsetDateTime::from_unix_timestamp(ms / 1000)
+        .map(|dt| format!("{:04}-{:02}-{:02}", dt.year(), u8::from(dt.month()), dt.day()))
+        .unwrap_or_else(|_| "unknown".to_string())
+}
+
+/// Render the filename pattern exactly the way the Batch screen previews it.
+fn render_batch_filename(
+    item: &BatchExportItem,
+    pattern: &str,
+    date_ms: Option<i64>,
+    extension: &str,
+) -> String {
+    let source = Path::new(&item.source_path);
+    let stem = source
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .unwrap_or("export");
+    let number = format!("{:03}", item.index + 1);
+    let date = date_ms.map(batch_date_label).unwrap_or_else(|| "unknown".to_string());
+    let template = if pattern.trim().is_empty() {
+        "{name}_{number}"
+    } else {
+        pattern
+    };
+
+    let rendered = template
+        .replace("{name}", &sanitize_batch_name(stem))
+        .replace("{number}", &number)
+        .replace("{date}", &date)
+        .replace("{ext}", extension);
+    let rendered = sanitize_batch_name(&rendered);
+
+    // The pattern may include an extension; always finish with the extension
+    // that matches the bytes we are about to write.
+    let path = Path::new(&rendered);
+    let existing_ext = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if existing_ext.is_empty() {
+        format!("{}.{}", rendered, extension)
+    } else if existing_ext == extension
+        || (extension == "jpg" && existing_ext == "jpeg")
+    {
+        rendered
+    } else {
+        let base = path
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .unwrap_or(&rendered);
+        format!("{}.{}", sanitize_batch_name(base), extension)
+    }
+}
+
+/// Never overwrite an existing export (or a name used earlier in this batch).
+fn unique_batch_path(folder: &Path, file_name: &str, used: &mut HashSet<String>) -> PathBuf {
+    let path = Path::new(file_name);
+    let stem = path
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .unwrap_or("export");
+    let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
+
+    let mut candidate = file_name.to_string();
+    let mut suffix = 2;
+    while used.contains(&candidate.to_ascii_lowercase()) || folder.join(&candidate).exists() {
+        candidate = if extension.is_empty() {
+            format!("{}-{}", stem, suffix)
+        } else {
+            format!("{}-{}.{}", stem, suffix, extension)
+        };
+        suffix += 1;
+    }
+    used.insert(candidate.to_ascii_lowercase());
+    folder.join(candidate)
+}
+
+fn resize_batch_image(image: DynamicImage, max_dimension: u32) -> DynamicImage {
+    let (width, height) = image.dimensions();
+    let longest = width.max(height);
+    if longest == 0 || longest <= max_dimension {
+        return image;
+    }
+    let scale = max_dimension as f64 / longest as f64;
+    let next_width = ((width as f64) * scale).round().max(1.0) as u32;
+    let next_height = ((height as f64) * scale).round().max(1.0) as u32;
+    image.resize_exact(next_width, next_height, image::imageops::FilterType::Lanczos3)
+}
+
+fn write_batch_jpeg(image: DynamicImage, path: &Path, quality: u8) -> Result<(), String> {
+    let rgb = image.to_rgb8();
+    let file = std::fs::File::create(path)
+        .map_err(|e| format!("Could not create the export file: {}", e))?;
+    let mut writer = std::io::BufWriter::new(file);
+    JpegEncoder::new_with_quality(&mut writer, quality)
+        .encode(&rgb, rgb.width(), rgb.height(), image::ExtendedColorType::Rgb8)
+        .map_err(|e| format!("JPEG encoding failed: {}", e))
+}
+
+fn write_batch_png(image: DynamicImage, path: &Path) -> Result<(), String> {
+    let file = std::fs::File::create(path)
+        .map_err(|e| format!("Could not create the export file: {}", e))?;
+    let writer = std::io::BufWriter::new(file);
+    PngEncoder::new_with_quality(writer, CompressionType::Default, FilterType::Adaptive)
+        .write_image(
+            image.as_bytes(),
+            image.width(),
+            image.height(),
+            image.color().into(),
+        )
+        .map_err(|e| format!("PNG encoding failed: {}", e))
+}
+
+fn write_batch_webp(image: DynamicImage, path: &Path) -> Result<(), String> {
+    let file = std::fs::File::create(path)
+        .map_err(|e| format!("Could not create the export file: {}", e))?;
+    let mut writer = std::io::BufWriter::new(file);
+    WebPEncoder::new_lossless(&mut writer)
+        .encode(
+            image.as_bytes(),
+            image.width(),
+            image.height(),
+            image.color().into(),
+        )
+        .map_err(|e| format!("WebP encoding failed: {}", e))
+}
+
+/// macOS ImageIO can decode HEIC/HEIF and other formats the Rust `image`
+/// crate cannot. `sips` exposes that pipeline on every Mac, so use it as a
+/// fallback for JPEG/PNG targets.
+fn write_batch_with_sips(
+    source: &Path,
+    output: &Path,
+    extension: &str,
+    quality: u8,
+    max_dimension: Option<u32>,
+) -> Result<(), String> {
+    let format = match extension {
+        "jpg" | "jpeg" => "jpeg",
+        "png" => "png",
+        other => return Err(format!("Unsupported fallback format: {}", other)),
+    };
+
+    let mut command = std::process::Command::new("/usr/bin/sips");
+    if let Some(max) = max_dimension.filter(|dim| *dim > 0) {
+        command.arg("-Z").arg(max.to_string());
+    }
+    command.arg("-s").arg("format").arg(format);
+    if format == "jpeg" {
+        command.arg("-s").arg("formatOptions").arg(quality.to_string());
+    }
+    let result = command
+        .arg(source)
+        .arg("--out")
+        .arg(output)
+        .output()
+        .map_err(|e| format!("Could not run the macOS image converter: {}", e))?;
+
+    if !result.status.success() || !output.exists() {
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        let detail = stderr.trim();
+        return Err(if detail.is_empty() {
+            "macOS could not decode this image.".to_string()
+        } else {
+            detail.to_string()
+        });
+    }
+    Ok(())
+}
+
+fn export_batch_item(
+    item: &BatchExportItem,
+    request: &BatchExportRequest,
+    folder: &Path,
+    quality: u8,
+    used: &mut HashSet<String>,
+) -> Result<PathBuf, String> {
+    let source = Path::new(&item.source_path);
+    if !source.is_file() {
+        return Err("Source file not found on disk.".to_string());
+    }
+
+    let output_ext = batch_output_extension(&request.format, source);
+    let date = item.date.or_else(|| {
+        std::fs::metadata(source)
+            .ok()
+            .and_then(|meta| meta.modified().ok())
+            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis() as i64)
+    });
+    let file_name = render_batch_filename(item, &request.pattern, date, &output_ext);
+    let output_path = unique_batch_path(folder, &file_name, used);
+
+    let converting = request.format != "source";
+    let resizing = request.max_dimension.map(|dim| dim > 0).unwrap_or(false);
+    let kind = item.kind.as_deref().unwrap_or("photo");
+
+    // Videos and RAW files cannot be decoded by the built-in image encoder.
+    // They can still be renamed and copied without modification.
+    if kind == "video" || kind == "raw" {
+        if converting || resizing || request.strip_metadata {
+            let message = if kind == "video" {
+                "Video conversion is not supported yet. Choose “Keep source format” and turn off resizing and metadata stripping to copy videos."
+            } else {
+                "RAW conversion needs native macOS image support. Choose “Keep source format” and turn off resizing and metadata stripping to copy RAW files."
+            };
+            return Err(message.to_string());
+        }
+        std::fs::copy(source, &output_path)
+            .map_err(|e| format!("Could not copy the file: {}", e))?;
+        return Ok(output_path);
+    }
+
+    // A straight copy preserves the original bytes (and its metadata) exactly.
+    if !converting && !resizing && !request.strip_metadata {
+        std::fs::copy(source, &output_path)
+            .map_err(|e| format!("Could not copy the file: {}", e))?;
+        return Ok(output_path);
+    }
+
+    let image = match image::open(source) {
+        Ok(image) => image,
+        Err(decode_error) => {
+            // HEIC/HEIF and some camera formats are only decodable through
+            // macOS ImageIO. Fall back to `sips` when writing JPEG or PNG,
+            // and use a temporary PNG when the target is WebP.
+            let fallback_ext = match output_ext.as_str() {
+                "jpg" | "jpeg" | "png" => output_ext.clone(),
+                "webp" => "png".to_string(),
+                _ => return Err(format!("Could not decode this image: {}", decode_error)),
+            };
+            let direct = fallback_ext == output_ext;
+            let target = if direct {
+                output_path.clone()
+            } else {
+                folder.join(format!(".stillroom-{}.png", Uuid::new_v4()))
+            };
+
+            if let Err(fallback_error) = write_batch_with_sips(
+                source,
+                &target,
+                &fallback_ext,
+                quality,
+                request.max_dimension,
+            ) {
+                if !direct {
+                    std::fs::remove_file(&target).ok();
+                }
+                return Err(format!(
+                    "Could not decode this image: {} ({})",
+                    decode_error, fallback_error
+                ));
+            }
+
+            if direct {
+                return Ok(output_path);
+            }
+
+            let decoded = image::open(&target)
+                .map_err(|e| format!("Could not read the converted image: {}", e))?;
+            let result = write_batch_webp(decoded, &output_path);
+            std::fs::remove_file(&target).ok();
+            return result.map(|_| output_path);
+        }
+    };
+    let image = match request.max_dimension.filter(|dim| *dim > 0) {
+        Some(max_dimension) => resize_batch_image(image, max_dimension),
+        None => image,
+    };
+
+    match output_ext.as_str() {
+        "jpg" | "jpeg" => write_batch_jpeg(image, &output_path, quality)?,
+        "png" => write_batch_png(image, &output_path)?,
+        "webp" => write_batch_webp(image, &output_path)?,
+        other => {
+            return Err(format!(
+                "Can’t write .{} files yet. Choose JPEG, PNG, or WebP.",
+                other
+            ))
+        }
+    }
+
+    Ok(output_path)
 }
 
 #[tauri::command]
@@ -1363,4 +1800,128 @@ pub async fn open_external(url: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn save_file(path: String, bytes: Vec<u8>) -> Result<(), String> {
     std::fs::write(&path, bytes).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod batch_export_tests {
+    use super::*;
+
+    fn temp_dir(label: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "stillroom-batch-test-{}-{}",
+            label,
+            Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&path).expect("create temp dir");
+        path
+    }
+
+    fn test_item(source: &Path) -> BatchExportItem {
+        BatchExportItem {
+            id: "item-1".to_string(),
+            source_path: source.to_string_lossy().to_string(),
+            index: 0,
+            kind: Some("photo".to_string()),
+            date: Some(1_710_000_000_000),
+        }
+    }
+
+    fn test_request(items: Vec<BatchExportItem>, folder: &Path, format: &str) -> BatchExportRequest {
+        BatchExportRequest {
+            items,
+            output_folder: folder.to_string_lossy().to_string(),
+            pattern: "{name}_{number}".to_string(),
+            format: format.to_string(),
+            quality: 0.85,
+            strip_metadata: true,
+            max_dimension: Some(10),
+        }
+    }
+
+    #[test]
+    fn renders_tokens_and_replaces_extension() {
+        let item = BatchExportItem {
+            id: "1".to_string(),
+            source_path: "/tmp/My Photo.JPG".to_string(),
+            index: 4,
+            kind: Some("photo".to_string()),
+            date: Some(1_710_000_000_000),
+        };
+
+        assert_eq!(
+            render_batch_filename(&item, "{name}_{number}", Some(1_710_000_000_000), "jpg"),
+            "My Photo_005.jpg"
+        );
+        assert_eq!(
+            render_batch_filename(&item, "{date}-{name}.png", Some(1_710_000_000_000), "jpg"),
+            "2024-03-09-My Photo.jpg"
+        );
+        assert_eq!(
+            render_batch_filename(&item, "original.jpg", None, "webp"),
+            "original.webp"
+        );
+    }
+
+    #[test]
+    fn exports_a_resized_jpeg() {
+        let folder = temp_dir("resize");
+        let source = folder.join("photo.png");
+        image::RgbaImage::from_pixel(20, 10, image::Rgba([120, 30, 40, 255]))
+            .save(&source)
+            .expect("write source image");
+
+        let item = test_item(&source);
+        let request = test_request(vec![item.clone()], &folder, "jpeg");
+        let mut used = HashSet::new();
+        let output = export_batch_item(&item, &request, &folder, 85, &mut used)
+            .expect("export should succeed");
+
+        assert!(output.exists(), "output file should exist");
+        assert_eq!(output.file_name().unwrap(), "photo_001.jpg");
+        assert_eq!(image::image_dimensions(&output).unwrap(), (10, 5));
+
+        std::fs::remove_dir_all(&folder).ok();
+    }
+
+    #[test]
+    fn avoids_overwriting_existing_files() {
+        let folder = temp_dir("collision");
+        let source = folder.join("photo.png");
+        image::RgbaImage::from_pixel(8, 8, image::Rgba([20, 40, 60, 255]))
+            .save(&source)
+            .expect("write source image");
+
+        let item = test_item(&source);
+        let request = test_request(vec![item.clone()], &folder, "png");
+        let first = export_batch_item(&item, &request, &folder, 85, &mut HashSet::new())
+            .expect("first export");
+        let second = export_batch_item(&item, &request, &folder, 85, &mut HashSet::new())
+            .expect("second export");
+
+        assert_eq!(first.file_name().unwrap(), "photo_001.png");
+        assert_eq!(second.file_name().unwrap(), "photo_001-2.png");
+        assert!(first.exists() && second.exists());
+
+        std::fs::remove_dir_all(&folder).ok();
+    }
+
+    #[test]
+    fn copies_untouched_source_format() {
+        let folder = temp_dir("copy");
+        let source = folder.join("clip.mp4");
+        std::fs::write(&source, b"not a real video, but a real file").expect("write source");
+
+        let mut item = test_item(&source);
+        item.kind = Some("video".to_string());
+        let mut request = test_request(vec![item.clone()], &folder, "source");
+        request.max_dimension = None;
+        request.strip_metadata = false;
+
+        let mut used = HashSet::new();
+        let output = export_batch_item(&item, &request, &folder, 85, &mut used)
+            .expect("video should copy unchanged");
+
+        assert_eq!(std::fs::read(&output).unwrap(), std::fs::read(&source).unwrap());
+        std::fs::remove_dir_all(&folder).ok();
+    }
 }

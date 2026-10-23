@@ -129,6 +129,12 @@ export interface ThumbnailReadyEvent {
   dataUrl: string;
 }
 
+export interface BatchProgressEvent {
+  current: number;
+  total: number;
+  currentFile: string;
+}
+
 /**
  * A folder the library is made of. `itemCount`/`totalSize` are computed from
  * the catalog, not stored, so they always match what the grid shows.
@@ -159,6 +165,7 @@ export type TauriCommandSignature = {
   update_item_tags: (itemId: string, tags: string[]) => void;
   move_to_trash: (paths: string[]) => void;
   reveal_in_finder: (path: string) => void;
+  open_folder: (path: string) => void;
 
   // Albums
   create_album: (name: string, colorIndex?: number) => Album;
@@ -176,6 +183,7 @@ export type TauriCommandSignature = {
 
   // Batch
   batch_export: (request: BatchExportRequest) => BatchExportResult;
+  cancel_batch_export: () => void;
 
   // Duplicates
   find_duplicates: () => DuplicateGroup[];

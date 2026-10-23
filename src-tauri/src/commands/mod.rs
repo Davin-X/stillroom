@@ -1571,8 +1571,81 @@ fn export_batch_item(
 
 #[tauri::command]
 pub async fn find_duplicates(state: State<'_, AppState>) -> Result<Vec<DuplicateGroup>, String> {
-    let _ = state;
-    Ok(vec![])
+    let db = get_db(&state)?;
+
+    // Load the catalog (hidden items included — a duplicate doesn't stop being
+    // one just because it was hidden).
+    let mut items: Vec<MediaItem> = sqlx::query_as::<_, MediaItem>("SELECT * FROM media_items")
+        .fetch_all(&db)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Only files that share a size with at least one other file can be exact
+    // duplicates, so hash only those — this keeps a full-library scan cheap.
+    let mut size_counts: HashMap<i64, usize> = HashMap::new();
+    for item in &items {
+        *size_counts.entry(item.size).or_insert(0) += 1;
+    }
+
+    for item in items.iter_mut() {
+        if item.sha256.as_deref().map(str::is_empty).unwrap_or(true)
+            && size_counts.get(&item.size).copied().unwrap_or(0) > 1
+        {
+            if let Some(hash) = compute_file_sha256(&item.path).await {
+                let _ = sqlx::query("UPDATE media_items SET sha256 = ? WHERE id = ?")
+                    .bind(&hash)
+                    .bind(&item.id)
+                    .execute(&db)
+                    .await;
+                item.sha256 = Some(hash);
+            }
+        }
+    }
+
+    // Group by content hash.
+    let mut groups_map: HashMap<String, Vec<MediaItem>> = HashMap::new();
+    for item in items {
+        if let Some(hash) = item.sha256.clone().filter(|h| !h.is_empty()) {
+            groups_map.entry(hash).or_default().push(item);
+        }
+    }
+
+    let mut groups: Vec<DuplicateGroup> = groups_map
+        .into_iter()
+        .filter(|(_, v)| v.len() > 1)
+        .map(|(hash, items)| DuplicateGroup {
+            id: hash.clone(),
+            sha256: hash,
+            size: items.first().map(|i| i.size).unwrap_or(0),
+            items,
+        })
+        .collect();
+
+    // Largest duplicate groups first.
+    groups.sort_by(|a, b| b.items.len().cmp(&a.items.len()).then(b.size.cmp(&a.size)));
+
+    Ok(groups)
+}
+
+async fn compute_file_sha256(path: &str) -> Option<String> {
+    let path = path.to_string();
+    tokio::task::spawn_blocking(move || {
+        use std::io::Read;
+        let mut file = std::fs::File::open(&path).ok()?;
+        let mut ctx = ring::digest::Context::new(&ring::digest::SHA256);
+        let mut buf = [0u8; 64 * 1024];
+        loop {
+            let n = file.read(&mut buf).ok()?;
+            if n == 0 {
+                break;
+            }
+            ctx.update(&buf[..n]);
+        }
+        Some(hex::encode(ctx.finish().as_ref()))
+    })
+    .await
+    .ok()
+    .flatten()
 }
 
 #[tauri::command]

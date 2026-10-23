@@ -10,8 +10,9 @@ export function SourcesManager(props: {
   onAddFolder?: () => void;
   onRemoveFolder?: (folder: LibraryFolder) => void;
   onFilterSource?: (folder: LibraryFolder) => void;
+  onRescan?: () => void;
 }) {
-  const { variant = "inline", onAddFolder, onRemoveFolder, onFilterSource } = props;
+  const { variant = "inline", onAddFolder, onRemoveFolder, onFilterSource, onRescan } = props;
   const folders = useLibraryStore((s) => s.folders);
   const activeSource = useLibraryStore((s) => s.activeSource);
   const setActiveSource = useLibraryStore((s) => s.setActiveSource);
@@ -72,10 +73,17 @@ export function SourcesManager(props: {
             </span>
           )}
         </div>
-        <button className="primary-button" type="button" onClick={() => onAddFolder?.()}>
-          <PlusIcon size={14} />
-          Add Source
-        </button>
+        <div className="sources-summary-actions">
+          <button className="primary-button" type="button" onClick={() => onAddFolder?.()}>
+            <PlusIcon size={14} />
+            Add Source
+          </button>
+          {onRescan && (
+            <button className="secondary-button" type="button" onClick={() => onRescan()}>
+              Rescan Sources
+            </button>
+          )}
+        </div>
       </div>
 
       {folders.length > 0 && (

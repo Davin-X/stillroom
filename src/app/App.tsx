@@ -180,6 +180,42 @@ function App() {
     return stats;
   }, [library.items]);
 
+  // Auto re-import known sources on startup so files restored from Trash (or
+  // added externally) are picked up without a manual scan.
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      try {
+        await library.loadFolders();
+        const folders = useLibraryStore.getState().folders;
+        if (!folders.length) return;
+        library.setBusy(true);
+        library.setProgress({ phase: "scanning", processed: 0, total: 0 });
+        for (const folder of folders) {
+          if (cancelled) break;
+          await tauri.library.scan(folder.path);
+        }
+        await library.loadLibrary();
+        await library.loadFolders();
+      } catch (e) {
+        console.error("Auto re-import failed:", e);
+      } finally {
+        if (!cancelled) {
+          library.setBusy(false);
+          library.setProgress(null);
+        }
+      }
+    };
+    void run();
+    const interval = window.setInterval(() => {
+      if (!cancelled) void run();
+    }, 5 * 60 * 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, []);
+
   const viewer = useViewerStore();
   const edit = useEditStore();
   const batch = useBatchStore();
@@ -1029,6 +1065,7 @@ const importFolder = async () => {
     library.setProgress({ phase: "scanning", processed: 0, total: 0 });
     const result = await tauri.library.scan(rootPath);
     await library.loadLibrary();
+    await library.loadFolders();
     library.setBusy(false);
     library.setProgress(null);
     showNotice(
@@ -1043,7 +1080,28 @@ const importFolder = async () => {
   }
 };
 
+const rescanSources = async () => {
+  try {
+    library.setBusy(true);
+    library.setProgress({ phase: "scanning", processed: 0, total: 0 });
+    await library.loadFolders();
+    const folders = useLibraryStore.getState().folders;
+    for (const folder of folders) {
+      await tauri.library.scan(folder.path);
+    }
+    await library.loadLibrary();
+    await library.loadFolders();
+    showNotice("Sources rescanned.");
+  } catch (e) {
+    showNotice(`Rescan failed: ${describeError(e)}`);
+  } finally {
+    library.setBusy(false);
+    library.setProgress(null);
+  }
+};
+
 handlersRef.current = { importFolder, importFiles, showNotice };
+
 
   return (
     <div
@@ -1455,15 +1513,29 @@ handlersRef.current = { importFolder, importFiles, showNotice };
 
           {screen === "Duplicates" && <DuplicatesScreen
             groups={library.duplicates}
+            items={library.items}
             onScan={library.scanDuplicates}
             onClear={library.clearDuplicates}
             busy={library.busy}
             assetUrl={assetUrl}
+            onTrashIds={async (ids: string[]) => {
+              if (!ids.length) return;
+              await library.deleteItems(ids);
+              library.clearDuplicates();
+              await library.scanDuplicates();
+            }}
+            onHideIds={async (ids: string[]) => {
+              if (!ids.length) return;
+              await library.setHiddenForIds(ids, true);
+              library.clearDuplicates();
+              await library.scanDuplicates();
+            }}
           />}
 
           {screen === "Settings" && <SettingsScreen
             onAddFolder={() => importFolder()}
             onRemoveFolder={(folder: LibraryFolder) => setFolderPendingRemove(folder)}
+            onRescan={() => { void rescanSources(); }}
           />}
         </main>
       </div>
@@ -1828,6 +1900,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
               onAddFolder={() => importFolder()}
               onRemoveFolder={(folder: LibraryFolder) => setFolderPendingRemove(folder)}
               onFilterSource={() => { setScreen("Library"); setSourcesSheetOpen(false); }}
+              onRescan={() => { void rescanSources(); }}
             />
             <div className="dialog-actions">
               <button
@@ -4086,6 +4159,29 @@ function AlbumsScreen(props: any) {
 
 function DuplicatesScreen(props: any) {
   const draftTransforms = useDraftTransforms();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  React.useEffect(() => {
+    const ids = new Set<string>();
+    (props.groups || []).forEach((g: any) => {
+      (g.items || []).forEach((it: any, i: number) => {
+        if (i > 0) ids.add(it.id);
+      });
+    });
+    setSelected(ids);
+  }, [props.groups]);
+
+  const toggleSelected = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const groupSelectedIds = (group: any) =>
+    (group.items || []).filter((it: any) => selected.has(it.id)).map((it: any) => it.id);
+
   return (
     <div className="feature-page">
       <div className="page-heading">
@@ -4096,14 +4192,33 @@ function DuplicatesScreen(props: any) {
         <div className="empty-state duplicate-empty"><span><DuplicatesIcon size={28} /></span><b>No duplicate scan yet</b><p>Compare file contents, not just names or file sizes.</p><button className="primary-button" type="button" onClick={props.onScan} disabled={props.busy}>Scan {props.items?.length || 0} files</button></div>
       ) : (
         <div>
+          <div className="duplicate-batch-bar">
+            <span>{selected.size} selected</span>
+            <button className="secondary-button" type="button" disabled={props.busy || selected.size === 0} onClick={() => props.onHideIds?.([...selected])}>Hide selected</button>
+            <button className="danger-button" type="button" disabled={props.busy || selected.size === 0} onClick={() => props.onTrashIds?.([...selected])}>Move selected to Trash</button>
+            <button className="secondary-button" type="button" disabled={props.busy} onClick={() => {
+              const ids = new Set<string>();
+              (props.groups || []).forEach((g: any) => (g.items || []).forEach((it: any, i: number) => { if (i > 0) ids.add(it.id); }));
+              setSelected(ids);
+            }}>Select all copies</button>
+            <button className="quiet-button" type="button" disabled={props.busy} onClick={() => setSelected(new Set())}>Clear selection</button>
+          </div>
           {props.groups.map((group: any, index: number) => (
             <section className="duplicate-result" key={index}>
-              <div className="duplicate-group-head"><div><b>Identical files</b><span>{group.items?.length || 0} copies · SHA-256 match</span></div></div>
+              <div className="duplicate-group-head"><div><b>Identical files</b><span>{group.items?.length || 0} copies · SHA-256 match</span></div>
+                <div className="duplicate-group-actions">
+                  <button className="secondary-button" type="button" disabled={props.busy || groupSelectedIds(group).length === 0} onClick={() => props.onHideIds?.(groupSelectedIds(group))}>Hide selected</button>
+                  <button className="danger-button" type="button" disabled={props.busy || groupSelectedIds(group).length === 0} onClick={() => props.onTrashIds?.(groupSelectedIds(group))}>Move selected to Trash</button>
+                </div>
+              </div>
               <div className="duplicate-grid">
                 {(group.items || []).map((item: any, i: number) => (
-                  <div className={`duplicate-card ${i === 0 ? "keep" : ""}`} key={item.id}>
+                  <div className={`duplicate-card ${selected.has(item.id) ? "selected" : ""} ${i === 0 ? "keep" : ""}`} key={item.id} onClick={() => toggleSelected(item.id)}>
+                    <label className="duplicate-select" onClick={(e) => e.stopPropagation()}>
+                      <input type="checkbox" checked={selected.has(item.id)} onChange={() => toggleSelected(item.id)} />
+                    </label>
                     {item.kind === "photo" ? <img src={props.assetUrl(item.path)} alt={item.name} style={draftImageStyle(draftTransforms, item.id)} /> : <div className="duplicate-nonimage"><KindBadge kind={item.kind} /></div>}
-                    <div><span>{i === 0 ? "Keep original" : "Select copy"}</span><small>{formatBytesSimple(item.size)} · {item.path}</small></div>
+                    <div><span>{i === 0 ? "Keep original" : selected.has(item.id) ? "Selected copy" : "Copy"}</span><small>{formatBytesSimple(item.size)} · {item.path}</small></div>
                   </div>
                 ))}
               </div>

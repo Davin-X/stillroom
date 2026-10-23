@@ -2,7 +2,8 @@ import React, { useState } from "react";
 import { formatBytes, tauri } from "../../engine/commands/tauri";
 import { useLibraryStore } from "../../engine/stores";
 import type { LibraryFolder } from "../../engine/types/commands";
-import { FolderIcon, InfoIcon, PlusIcon } from "./icons";
+import { ContextMenu, type ContextMenuItem } from "./ContextMenu";
+import { FolderIcon, InfoIcon, MoreIcon, PlusIcon } from "./icons";
 
 export function SourcesManager(props: {
   variant?: "inline" | "sheet";
@@ -15,12 +16,18 @@ export function SourcesManager(props: {
   const activeSource = useLibraryStore((s) => s.activeSource);
   const setActiveSource = useLibraryStore((s) => s.setActiveSource);
   const [query, setQuery] = useState("");
+  const [menu, setMenu] = useState<{ folder: LibraryFolder; x: number; y: number } | null>(null);
 
   const totalItems = folders.reduce((sum, folder) => sum + folder.itemCount, 0);
   const totalSize = folders.reduce((sum, folder) => sum + folder.totalSize, 0);
 
   const isViewing = (folder: LibraryFolder) =>
     activeSource === folder.path || Boolean(activeSource?.startsWith(`${folder.path}/`));
+
+  const openMenu = (folder: LibraryFolder, event: React.MouseEvent<HTMLButtonElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setMenu({ folder, x: rect.right - 4, y: rect.bottom + 4 });
+  };
 
   const reveal = (folder: LibraryFolder) => {
     void tauri.items.revealInFinder(folder.path).catch((error: unknown) => {
@@ -33,11 +40,19 @@ export function SourcesManager(props: {
     onFilterSource?.(folder);
   };
 
+  const menuItems = (folder: LibraryFolder): ContextMenuItem[] => {
+    const viewing = isViewing(folder);
+    return [
+      { label: viewing ? "Viewing in Library" : "View in Library", disabled: viewing, onClick: () => filterTo(folder) },
+      { label: "Reveal in Finder", onClick: () => reveal(folder) },
+      { label: "", divider: true },
+      { label: "Remove Source…", danger: true, disabled: !onRemoveFolder, onClick: () => onRemoveFolder?.(folder) },
+    ];
+  };
+
   const q = query.trim().toLowerCase();
   const filteredFolders = q
-    ? folders.filter(
-        (f) => f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q)
-      )
+    ? folders.filter((f) => f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q))
     : folders;
 
   const body = (
@@ -137,20 +152,14 @@ export function SourcesManager(props: {
                       )}
                       <button
                         type="button"
-                        className="sources-row-reveal"
-                        title="Reveal in Finder"
-                        onClick={() => reveal(folder)}
+                        className="sources-row-menu"
+                        aria-label={`Actions for ${folder.name}`}
+                        aria-haspopup="menu"
+                        aria-expanded={menu?.folder.path === folder.path}
+                        title="Source actions"
+                        onClick={(event) => openMenu(folder, event)}
                       >
-                        Reveal
-                      </button>
-                      <button
-                        type="button"
-                        className="sources-row-remove"
-                        title="Remove source"
-                        disabled={!onRemoveFolder}
-                        onClick={() => onRemoveFolder?.(folder)}
-                      >
-                        Remove
+                        <MoreIcon size={16} />
                       </button>
                     </div>
                   </td>
@@ -159,6 +168,15 @@ export function SourcesManager(props: {
             })}
           </tbody>
         </table>
+      )}
+
+      {menu && (
+        <ContextMenu
+          items={menuItems(menu.folder)}
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+        />
       )}
 
       {folders.length > 0 && (

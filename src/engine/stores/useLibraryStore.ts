@@ -118,35 +118,51 @@ interface LibraryState {
   showNotice: (text: string) => void;
 }
 
+// Sorting is the most expensive part of deriving the gallery collections.
+// Keep it stable across query, selection, and screen changes, which do not
+// replace the underlying items or alter the sort order.
+let sortedSource: MediaItem[] | null = null;
+let sortedBy: LibraryState["sortBy"] | null = null;
+let sortedOrder: LibraryState["sortOrder"] | null = null;
+let sortedCache: MediaItem[] = [];
+
+function getSortedItems(items: MediaItem[], sortBy: LibraryState["sortBy"], sortOrder: LibraryState["sortOrder"]) {
+  if (items === sortedSource && sortBy === sortedBy && sortOrder === sortedOrder) return sortedCache;
+  sortedSource = items;
+  sortedBy = sortBy;
+  sortedOrder = sortOrder;
+  sortedCache = [...items].sort((a, b) => {
+    let comparison = 0;
+    switch (sortBy) {
+      case "name": comparison = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }); break;
+      case "size": comparison = a.size - b.size; break;
+      case "kind": comparison = a.kind.localeCompare(b.kind); break;
+      case "modifiedAt": comparison = a.modifiedAt - b.modifiedAt; break;
+      case "capturedAt":
+      default: comparison = (a.capturedAt ?? a.modifiedAt) - (b.capturedAt ?? b.modifiedAt); break;
+    }
+    if (comparison === 0) comparison = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+    return sortOrder === "asc" ? comparison : -comparison;
+  });
+  return sortedCache;
+}
+
+function computeInspectionDerived(state: LibraryState) {
+  const viewerSelected = state.viewerItems.find((item) => item.id === state.inspectedId) || state.viewerItems[0] || null;
+  return {
+    viewerSelected,
+    currentIndex: Math.max(0, state.playableItems.findIndex((item) => item.id === state.inspectedId)),
+    viewerIndex: viewerSelected ? state.viewerItems.findIndex((item) => item.id === viewerSelected.id) : -1,
+  };
+}
+
 function computeDerived(state: LibraryState) {
   const { items, filter, query, activeAlbum, activeSource, inspectedId, viewerScope, sortBy, sortOrder } = state;
 
   // One sort for every derived collection. Hidden items are a separate,
   // first-class set: they never appear in the normal grid, viewer, album
   // covers, or counts.
-  const sorted = [...items].sort((a, b) => {
-    let comparison = 0;
-    switch (sortBy) {
-      case "name":
-        comparison = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
-        break;
-      case "size":
-        comparison = a.size - b.size;
-        break;
-      case "kind":
-        comparison = a.kind.localeCompare(b.kind);
-        break;
-      case "modifiedAt":
-        comparison = a.modifiedAt - b.modifiedAt;
-        break;
-      case "capturedAt":
-      default:
-        comparison = (a.capturedAt ?? a.modifiedAt) - (b.capturedAt ?? b.modifiedAt);
-        break;
-    }
-    if (comparison === 0) comparison = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
-    return sortOrder === "asc" ? comparison : -comparison;
-  });
+  const sorted = getSortedItems(items, sortBy, sortOrder);
   const hiddenItems = sorted.filter((item) => item.hidden);
   let visible = sorted.filter((item) => !item.hidden);
 
@@ -344,9 +360,11 @@ export const useLibraryStore = create<LibraryState>()(
       // Single-click inspects, checkbox/"+" toggles selection membership,
       // double-click inspects + opens the viewer on that item.
       inspectItem: (id) => {
-        if (id !== null && !get().items.some((i) => i.id === id)) return;
-        set({ inspectedId: id });
-        get().refreshDerived();
+        const state = get();
+        if (id === state.inspectedId) return;
+        if (id !== null && !state.items.some((i) => i.id === id)) return;
+        const next = { ...state, inspectedId: id };
+        set({ inspectedId: id, ...computeInspectionDerived(next) });
       },
 
       toggleSelection: (id) => {
@@ -355,7 +373,6 @@ export const useLibraryStore = create<LibraryState>()(
           ? selectedIds.filter((s) => s !== id)
           : [...selectedIds, id];
         set({ selectedIds: next });
-        get().refreshDerived();
       },
 
       addToSelection: (id: string) => {
@@ -364,18 +381,18 @@ export const useLibraryStore = create<LibraryState>()(
         // inspector is currently showing.
         if (selectedIds.includes(id)) return;
         set({ selectedIds: [...selectedIds, id] });
-        get().refreshDerived();
       },
 
       // Arrow-key / slideshow / viewer navigation moves inspection only;
       // it never rewrites the user's multi-selection.
       navigatePhoto: (delta) => {
-        const { playableItems, inspectedId } = get();
+        const { playableItems, inspectedId: currentId } = get();
         if (playableItems.length === 0) return;
-        const currentIndex = playableItems.findIndex((i) => i.id === inspectedId);
+        const currentIndex = playableItems.findIndex((i) => i.id === currentId);
         const nextIndex = (currentIndex + delta + playableItems.length) % playableItems.length;
-        set({ inspectedId: playableItems[nextIndex].id });
-        get().refreshDerived();
+        const state = get();
+        const inspectedId = playableItems[nextIndex].id;
+        set({ inspectedId, ...computeInspectionDerived({ ...state, inspectedId }) });
       },
 
       navigateViewerPhoto: (delta) => {
@@ -383,8 +400,9 @@ export const useLibraryStore = create<LibraryState>()(
         if (viewerItems.length === 0 || !viewerSelected) return;
         const currentIndex = viewerItems.findIndex((i) => i.id === viewerSelected.id);
         const nextIndex = (currentIndex + delta + viewerItems.length) % viewerItems.length;
-        set({ inspectedId: viewerItems[nextIndex].id });
-        get().refreshDerived();
+        const state = get();
+        const inspectedId = viewerItems[nextIndex].id;
+        set({ inspectedId, ...computeInspectionDerived({ ...state, inspectedId }) });
       },
 
       selectRange: (startId, endId) => {
@@ -396,7 +414,6 @@ export const useLibraryStore = create<LibraryState>()(
         const [from, to] = start < end ? [start, end] : [end, start];
         const rangeIds = visibleItems.slice(from, to + 1).map((i) => i.id);
         set({ selectedIds: rangeIds });
-        get().refreshDerived();
       },
 
       // Clearing the selection leaves inspection untouched, so the Inspector
@@ -412,20 +429,17 @@ export const useLibraryStore = create<LibraryState>()(
           // Not all selected, select all visible
           set({ selectedIds: visibleItems.map((i) => i.id) });
         }
-        get().refreshDerived();
       },
 
       selectAll: () => {
         const { visibleItems } = get();
         set({ selectedIds: visibleItems.map((i) => i.id) });
-        get().refreshDerived();
       },
 
       // The Hidden gallery owns its own item list, so it needs a way to replace
       // the shared selection without going through `visibleItems`.
       setSelectedIds: (ids) => {
         set({ selectedIds: [...new Set(ids)] });
-        get().refreshDerived();
       },
 
       // Filters & View
@@ -461,6 +475,7 @@ export const useLibraryStore = create<LibraryState>()(
       setScreen: (screen) => set({ screen }),
 
       setViewerScope: (viewerScope) => {
+        if (get().viewerScope === viewerScope) return;
         set({ viewerScope });
         get().refreshDerived();
       },

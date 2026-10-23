@@ -2812,14 +2812,6 @@ body {
   outline: none;
 }
 
-.storage-widget {
-  display: none; /* replaced by library-stats */
-}
-
-.sidebar-footer {
-  display: none;
-}
-
 .storage-row {
   display: flex;
   justify-content: space-between;

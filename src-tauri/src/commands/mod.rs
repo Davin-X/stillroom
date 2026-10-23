@@ -28,6 +28,8 @@ use walkdir::WalkDir;
 #[serde(rename_all = "camelCase")]
 pub struct ScanResult {
     pub items: Vec<MediaItem>,
+    pub discovered_count: usize,
+    pub cancelled: bool,
     pub albums: Vec<Album>,
     pub tags: Vec<Tag>,
     pub sessions: Vec<ImportSession>,
@@ -295,6 +297,17 @@ const TAG_SELECT: &str = "SELECT t.id, t.name, t.color_index, t.created_at, \
      (SELECT COUNT(*) FROM media_tags mt JOIN media_items m ON m.id = mt.media_id \
       WHERE mt.tag_id = t.id AND m.hidden = 0) AS item_count FROM tags t";
 
+/// Shared cooperative cancellation flag for folder scans, file imports, and
+/// duplicate hashing. Each operation clears it before starting and checks it
+/// between filesystem work units.
+static SCAN_CANCEL: AtomicBool = AtomicBool::new(false);
+
+#[tauri::command]
+pub async fn cancel_scan() -> Result<(), String> {
+    SCAN_CANCEL.store(true, Ordering::SeqCst);
+    Ok(())
+}
+
 fn get_db(state: &State<'_, AppState>) -> Result<SqlitePool, String> {
     let guard = state.db.lock().map_err(|e| e.to_string())?;
     Ok(guard.as_ref().ok_or("Database not initialized".to_string())?.pool().clone())
@@ -359,21 +372,22 @@ fn inspect_media_file(
     path: &Path,
     now: i64,
 ) -> Option<(MediaItem, Option<i32>, Option<i32>)> {
+    let metadata = std::fs::metadata(path).ok().filter(|metadata| metadata.is_file())?;
+    inspect_media_file_with_metadata(path, &metadata, now)
+}
+
+fn inspect_media_file_with_metadata(
+    path: &Path,
+    metadata: &std::fs::Metadata,
+    now: i64,
+) -> Option<(MediaItem, Option<i32>, Option<i32>)> {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
     if !is_media_file(&ext) {
         return None;
     }
 
-    let metadata = match std::fs::metadata(path) {
-        Ok(metadata) if metadata.is_file() => metadata,
-        _ => return None,
-    };
-
     let size = metadata.len() as i64;
-    let modified_at = metadata
-        .modified()
-        .map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as i64)
-        .unwrap_or(0);
+    let modified_at = file_modified_at(metadata);
 
     let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
     let kind = kind_for_ext(&ext).to_string();
@@ -403,6 +417,13 @@ fn inspect_media_file(
     // UPDATE clause so a re-import refreshes file facts without discarding the
     // user's own state.
     Some((item, width, height))
+}
+
+fn file_modified_at(metadata: &std::fs::Metadata) -> i64 {
+    metadata
+        .modified()
+        .map(|time| time.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as i64)
+        .unwrap_or(0)
 }
 
 /// Upsert a bounded group of inspected files in one SQLite statement. Batches
@@ -465,10 +486,17 @@ async fn import_media_file(
 #[tauri::command]
 pub async fn scan_library(
     root_path: String,
+    force: bool,
     state: State<'_, AppState>,
     window: Window,
 ) -> Result<ScanResult, String> {
+    SCAN_CANCEL.store(false, Ordering::SeqCst);
     let root = PathBuf::from(&root_path);
+    let root_metadata = std::fs::metadata(&root)
+        .map_err(|error| format!("Cannot access source folder '{}': {error}", root.display()))?;
+    if !root_metadata.is_dir() {
+        return Err(format!("Source path is not a folder: {}", root.display()));
+    }
     let start = std::time::Instant::now();
     let mut items = Vec::new();
     let mut total_size: i64 = 0;
@@ -478,38 +506,97 @@ pub async fn scan_library(
     let db = get_db(&state)?;
     let now = now_ms();
 
+    // A normal startup scan only needs to inspect new or changed files. The
+    // explicit Rescan action passes `force` to re-read every file header.
+    let known_files: HashMap<String, (i64, i64)> = if force {
+        HashMap::new()
+    } else {
+        sqlx::query_as::<_, (String, i64, i64)>(
+            "SELECT path, size, modified_at FROM media_items",
+        )
+        .fetch_all(&db)
+        .await
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|(path, size, modified_at)| (path, (size, modified_at)))
+        .collect()
+    };
+
     // Discover the media paths once. Keeping only paths avoids retaining the
     // walker's directory entries while still giving the progress UI a total.
-    let media_paths: Vec<PathBuf> = WalkDir::new(&root)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file())
-        .filter(|e| {
-            let ext = e.path()
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .unwrap_or("")
-                .to_lowercase();
-            is_media_file(&ext)
-        })
-        .map(|entry| entry.into_path())
-        .collect();
+    let mut media_paths = Vec::new();
+    let mut walk_error: Option<String> = None;
+    for entry in WalkDir::new(&root) {
+        if SCAN_CANCEL.load(Ordering::SeqCst) {
+            break;
+        }
+        match entry {
+            Ok(entry) if entry.file_type().is_file() => {
+                let ext = entry.path()
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                if is_media_file(&ext) {
+                    media_paths.push(entry.into_path());
+                }
+            }
+            Ok(_) => {}
+            Err(error) => {
+                if walk_error.is_none() {
+                    walk_error = Some(error.to_string());
+                }
+            }
+        }
+    }
+    if media_paths.is_empty() && !SCAN_CANCEL.load(Ordering::SeqCst) {
+        if let Some(error) = walk_error {
+            return Err(format!(
+                "Could not read media in '{}': {error}. Check the folder's macOS access permissions.",
+                root.display()
+            ));
+        }
+    }
     let total = media_paths.len() as u64;
+    let mut discovered_count = 0usize;
 
-    // Inspect and write in bounded chunks to avoid a SQL request per file.
+    // Check metadata for every path, but only decode image headers and write
+    // rows for new/changed files. Writes stay in bounded batches.
     const SCAN_BATCH_SIZE: usize = 100;
     for paths in media_paths.chunks(SCAN_BATCH_SIZE) {
-        let batch: Vec<_> = paths
-            .iter()
-            .filter_map(|path| inspect_media_file(path, now))
-            .collect();
-        total_size += batch.iter().map(|(item, _, _)| item.size).sum::<i64>();
+        let mut batch = Vec::with_capacity(paths.len());
+        let mut completed_in_batch = 0u64;
+        for path in paths {
+            if SCAN_CANCEL.load(Ordering::SeqCst) {
+                break;
+            }
+            completed_in_batch += 1;
+            let Some(metadata) = std::fs::metadata(path).ok().filter(|metadata| metadata.is_file()) else {
+                continue;
+            };
+            let size = metadata.len() as i64;
+            let modified_at = file_modified_at(&metadata);
+            total_size += size;
+            discovered_count += 1;
+            let path_key = path.to_string_lossy().into_owned();
+            if !force
+                && known_files
+                    .get(&path_key)
+                    .is_some_and(|fingerprint| *fingerprint == (size, modified_at))
+            {
+                continue;
+            }
+            if let Some(item) = inspect_media_file_with_metadata(path, &metadata, now) {
+                batch.push(item);
+            }
+        }
+        let cancelled = SCAN_CANCEL.load(Ordering::SeqCst);
         items.extend(batch.iter().map(|(item, _, _)| item.clone()));
         upsert_media_batch(&db, &batch).await?;
-        processed += paths.len() as u64;
+        processed += completed_in_batch;
 
         // Emit progress every two batches or on the last batch.
-        if processed % 200 < SCAN_BATCH_SIZE as u64 || processed == total {
+        if processed % 200 < SCAN_BATCH_SIZE as u64 || processed == total || cancelled {
             let current_file = paths.last().map(|path| path.to_string_lossy().to_string()).unwrap_or_default();
             let _ = window.emit(
                 "import-progress",
@@ -524,6 +611,9 @@ pub async fn scan_library(
             // and the frontend stays responsive.
             tokio::task::yield_now().await;
         }
+        if cancelled {
+            break;
+        }
     }
 
     // Sort by modified date desc
@@ -531,7 +621,7 @@ pub async fn scan_library(
 
     // Only remember the folder once it actually contributed media, so an
     // accidental pick of an empty folder never shows up in the sidebar.
-    if !items.is_empty() {
+    if discovered_count > 0 {
         remember_folder(&db, &root_path).await;
     }
 
@@ -552,6 +642,8 @@ pub async fn scan_library(
 
     Ok(ScanResult {
         items,
+        discovered_count,
+        cancelled: SCAN_CANCEL.load(Ordering::SeqCst),
         albums,
         tags,
         sessions: vec![],
@@ -571,6 +663,7 @@ pub async fn import_files(
     state: State<'_, AppState>,
     window: Window,
 ) -> Result<ScanResult, String> {
+    SCAN_CANCEL.store(false, Ordering::SeqCst);
     let start = std::time::Instant::now();
     let db = get_db(&state)?;
     let now = now_ms();
@@ -582,9 +675,16 @@ pub async fn import_files(
     let all_paths: Vec<PathBuf> = {
         let mut tmp = Vec::new();
         for raw in &paths {
+            if SCAN_CANCEL.load(Ordering::SeqCst) {
+                break;
+            }
             let path = PathBuf::from(raw);
             if path.is_dir() {
-                for entry in WalkDir::new(&path).into_iter().filter_map(|e| e.ok()) {
+                for entry in WalkDir::new(&path) {
+                    if SCAN_CANCEL.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    let Ok(entry) = entry else { continue; };
                     if entry.file_type().is_file() {
                         if let Some(ext) = entry.path().extension().and_then(|e| e.to_str()) {
                             let ext = ext.to_lowercase();
@@ -608,13 +708,16 @@ pub async fn import_files(
     let total = all_paths.len() as u64;
 
     for path in all_paths {
+        if SCAN_CANCEL.load(Ordering::SeqCst) {
+            break;
+        }
         if let Some((item, size)) = import_media_file(&db, &path, now).await? {
             total_size += size;
             items.push(item);
         }
 
         processed += 1;
-        if processed % 200 == 0 || processed == total {
+        if processed % 200 == 0 || processed == total || SCAN_CANCEL.load(Ordering::SeqCst) {
             let _ = window.emit(
                 "import-progress",
                 json!({
@@ -652,8 +755,11 @@ pub async fn import_files(
         .await
         .map_err(|e| e.to_string())?;
 
+    let discovered_count = items.len();
     Ok(ScanResult {
         items,
+        discovered_count,
+        cancelled: SCAN_CANCEL.load(Ordering::SeqCst),
         albums,
         tags,
         sessions: vec![],
@@ -1583,7 +1689,11 @@ fn export_batch_item(
 }
 
 #[tauri::command]
-pub async fn find_duplicates(state: State<'_, AppState>) -> Result<Vec<DuplicateGroup>, String> {
+pub async fn find_duplicates(
+    state: State<'_, AppState>,
+    window: Window,
+) -> Result<Vec<DuplicateGroup>, String> {
+    SCAN_CANCEL.store(false, Ordering::SeqCst);
     let db = get_db(&state)?;
 
     // Load the catalog (hidden items included — a duplicate doesn't stop being
@@ -1600,19 +1710,69 @@ pub async fn find_duplicates(state: State<'_, AppState>) -> Result<Vec<Duplicate
         *size_counts.entry(item.size).or_insert(0) += 1;
     }
 
-    for item in items.iter_mut() {
-        if item.sha256.as_deref().map(str::is_empty).unwrap_or(true)
-            && size_counts.get(&item.size).copied().unwrap_or(0) > 1
-        {
-            if let Some(hash) = compute_file_sha256(&item.path).await {
-                let _ = sqlx::query("UPDATE media_items SET sha256 = ? WHERE id = ?")
-                    .bind(&hash)
-                    .bind(&item.id)
-                    .execute(&db)
-                    .await;
-                item.sha256 = Some(hash);
-            }
+    let candidates: Vec<usize> = items
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| {
+            item.sha256.as_deref().map(str::is_empty).unwrap_or(true)
+                && size_counts.get(&item.size).copied().unwrap_or(0) > 1
+        })
+        .map(|(index, _)| index)
+        .collect();
+
+    // Keep hashing strictly serial. Duplicate checks can read many gigabytes,
+    // and parallel reads made the gallery compete with the rest of the system
+    // for SSD bandwidth on large libraries. Yield to the UI after each file.
+    let total = candidates.len() as u64;
+    let total_bytes: u64 = candidates
+        .iter()
+        .map(|&index| items[index].size.max(0) as u64)
+        .sum();
+    let mut bytes_completed = 0u64;
+    let mut hash_updates: Vec<(String, String)> = Vec::with_capacity(candidates.len());
+    for (position, &index) in candidates.iter().enumerate() {
+        if SCAN_CANCEL.load(Ordering::SeqCst) {
+            break;
         }
+        let path = items[index].path.clone();
+        let name = items[index].name.clone();
+        let size = items[index].size.max(0) as u64;
+        let id = items[index].id.clone();
+        let hash = compute_file_sha256_with_progress(
+            path,
+            name,
+            size,
+            bytes_completed,
+            total_bytes,
+            position as u64 + 1,
+            total,
+            window.clone(),
+        )
+        .await;
+        if SCAN_CANCEL.load(Ordering::SeqCst) {
+            break;
+        }
+        if let Some(hash) = hash {
+            hash_updates.push((id, hash.clone()));
+            items[index].sha256 = Some(hash);
+        }
+        bytes_completed = bytes_completed.saturating_add(size);
+        tokio::task::yield_now().await;
+    }
+
+    // Persist newly computed hashes in one transaction. This avoids a durable
+    // SQLite commit for every candidate while retaining each per-file hash.
+    if !hash_updates.is_empty() {
+        let mut transaction = db.begin().await.map_err(|e| e.to_string())?;
+        for (id, hash) in hash_updates {
+            sqlx::query("UPDATE media_items SET sha256 = ? WHERE id = ?")
+                .bind(hash)
+                .bind(id)
+                .execute(&mut *transaction)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        transaction.commit().await.map_err(|e| e.to_string())?;
     }
 
     // Group by content hash.
@@ -1640,25 +1800,81 @@ pub async fn find_duplicates(state: State<'_, AppState>) -> Result<Vec<Duplicate
     Ok(groups)
 }
 
-async fn compute_file_sha256(path: &str) -> Option<String> {
-    let path = path.to_string();
-    tokio::task::spawn_blocking(move || {
+async fn compute_file_sha256_with_progress(
+    path: String,
+    name: String,
+    file_size: u64,
+    bytes_before_file: u64,
+    total_bytes: u64,
+    file_number: u64,
+    total_files: u64,
+    window: Window,
+) -> Option<String> {
+    let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel::<u64>(8);
+    let hash_task = tokio::task::spawn_blocking(move || {
         use std::io::Read;
         let mut file = std::fs::File::open(&path).ok()?;
         let mut ctx = ring::digest::Context::new(&ring::digest::SHA256);
-        let mut buf = [0u8; 64 * 1024];
+        let mut buf = [0u8; 1024 * 1024];
         loop {
+            if SCAN_CANCEL.load(Ordering::SeqCst) {
+                return None;
+            }
             let n = file.read(&mut buf).ok()?;
             if n == 0 {
                 break;
             }
             ctx.update(&buf[..n]);
+            progress_tx.blocking_send(n as u64).ok()?;
         }
         Some(hex::encode(ctx.finish().as_ref()))
-    })
-    .await
-    .ok()
-    .flatten()
+    });
+
+    let mut file_bytes = 0u64;
+    let mut last_reported_bytes = 0u64;
+    let mut last_reported_at = std::time::Instant::now();
+    while let Some(bytes) = progress_rx.recv().await {
+        file_bytes = file_bytes.saturating_add(bytes);
+        let should_report = file_bytes.saturating_sub(last_reported_bytes) >= 16 * 1024 * 1024
+            || last_reported_at.elapsed() >= std::time::Duration::from_millis(200);
+        if should_report {
+            let _ = window.emit(
+                "import-progress",
+                json!({
+                    "phase": "hashing",
+                    "processed": file_number.saturating_sub(1),
+                    "total": total_files,
+                    "filesProcessed": file_number.saturating_sub(1),
+                    "filesTotal": total_files,
+                    "bytesProcessed": bytes_before_file.saturating_add(file_bytes),
+                    "bytesTotal": total_bytes,
+                    "currentFile": &name,
+                    "currentFileBytes": file_bytes,
+                    "currentFileSize": file_size,
+                }),
+            );
+            last_reported_bytes = file_bytes;
+            last_reported_at = std::time::Instant::now();
+        }
+    }
+
+    let hash = hash_task.await.ok().flatten();
+    let _ = window.emit(
+        "import-progress",
+        json!({
+            "phase": "hashing",
+            "processed": file_number,
+            "total": total_files,
+            "filesProcessed": file_number,
+            "filesTotal": total_files,
+            "bytesProcessed": bytes_before_file.saturating_add(file_bytes),
+            "bytesTotal": total_bytes,
+            "currentFile": &name,
+            "currentFileBytes": file_bytes,
+            "currentFileSize": file_size,
+        }),
+    );
+    hash
 }
 
 #[tauri::command]
@@ -1907,37 +2123,55 @@ mod batch_export_tests {
     }
 
     /// Manual microbenchmark of the real media inspection and SQLite write
-    /// paths against a generated library. Run with:
+    /// paths. Set STILLROOM_PERF_ROOT to benchmark a real media folder; without
+    /// it, the test creates a generated 10,000-image fixture. Run with:
     /// `cargo test scan_performance_benchmark -- --ignored --nocapture`
     #[tokio::test]
     #[ignore = "manual synthetic performance benchmark"]
     async fn scan_performance_benchmark() {
-        const FILES: usize = 10_000;
         const BATCH: usize = 100;
-        let root = temp_dir("scan-perf");
-        let seed = root.join("seed.png");
-        image::RgbaImage::from_pixel(8, 8, image::Rgba([80, 120, 160, 255]))
-            .save(&seed)
-            .expect("write seed image");
-        for index in 0..FILES {
-            std::fs::copy(&seed, root.join(format!("image-{index:05}.png")))
+        let supplied_root = std::env::var_os("STILLROOM_PERF_ROOT").map(PathBuf::from);
+        let generated = supplied_root.is_none();
+        let root = supplied_root.unwrap_or_else(|| temp_dir("scan-perf"));
+        if generated {
+            const FILES: usize = 10_000;
+            let seed = root.join("seed.png");
+            image::RgbaImage::from_pixel(8, 8, image::Rgba([80, 120, 160, 255]))
+                .save(&seed)
+                .expect("write seed image");
+            for index in 0..FILES {
+                std::fs::copy(&seed, root.join(format!("image-{index:05}.png")))
                 .expect("generate synthetic image");
+            }
+            std::fs::remove_file(seed).ok();
+            // Exercise large-file size handling without allocating gigabytes
+            // on disk or needing a codec-specific video sample.
+            let large_video = root.join("large-video.mp4");
+            std::fs::File::create(&large_video)
+                .and_then(|file| file.set_len(2 * 1024 * 1024 * 1024))
+                .expect("create sparse 2 GiB video fixture");
         }
-        std::fs::remove_file(seed).ok();
-        // Exercise large-file size handling without allocating gigabytes on
-        // disk or needing a codec-specific video sample.
-        let large_video = root.join("large-video.mp4");
-        std::fs::File::create(&large_video)
-            .and_then(|file| file.set_len(2 * 1024 * 1024 * 1024))
-            .expect("create sparse 2 GiB video fixture");
+        assert!(root.is_dir(), "performance fixture directory must exist");
 
         let paths: Vec<PathBuf> = WalkDir::new(&root)
             .into_iter()
             .filter_map(|entry| entry.ok())
             .filter(|entry| entry.file_type().is_file())
+            .filter(|entry| {
+                let ext = entry.path().extension().and_then(|value| value.to_str()).unwrap_or("").to_lowercase();
+                is_media_file(&ext)
+            })
             .map(|entry| entry.into_path())
             .collect();
-        assert_eq!(paths.len(), FILES + 1);
+        assert!(!paths.is_empty(), "fixture contains no supported media files");
+        let photo_count = paths.iter().filter(|path| {
+            let ext = path.extension().and_then(|value| value.to_str()).unwrap_or("").to_lowercase();
+            kind_for_ext(&ext) == "photo"
+        }).count();
+        let video_count = paths.iter().filter(|path| {
+            let ext = path.extension().and_then(|value| value.to_str()).unwrap_or("").to_lowercase();
+            kind_for_ext(&ext) == "video"
+        }).count();
         let now = now_ms();
 
         let legacy_db = perf_db().await;
@@ -1968,17 +2202,20 @@ mod batch_export_tests {
             .fetch_one(&batch_db)
             .await
             .expect("count imported media");
-        assert_eq!(count, (FILES + 1) as i64);
-        let large_video_size: i64 = sqlx::query_scalar(
-            "SELECT size FROM media_items WHERE path = ?",
-        )
-        .bind(large_video.to_string_lossy().as_ref())
-        .fetch_one(&batch_db)
-        .await
-        .expect("read large video size");
-        assert_eq!(large_video_size, 2 * 1024 * 1024 * 1024);
+        assert_eq!(count, paths.len() as i64);
+        if generated {
+            let large_video_size: i64 = sqlx::query_scalar(
+                "SELECT size FROM media_items WHERE path LIKE '%large-video.mp4'",
+            )
+            .fetch_one(&batch_db)
+            .await
+            .expect("read large video size");
+            assert_eq!(large_video_size, 2 * 1024 * 1024 * 1024);
+        }
+        let label = if generated { "generated fixture" } else { "provided media folder" };
         println!(
-            "Synthetic scan {FILES} PNGs (8x8) + sparse 2 GiB MP4: per-file writes {:.2}s; batches of {BATCH}: {:.2}s; speedup {:.2}x",
+            "Scan {label}: {} photos, {video_count} videos: per-file writes {:.2}s; batches of {BATCH}: {:.2}s; speedup {:.2}x",
+            photo_count,
             legacy_elapsed.as_secs_f64(),
             batch_elapsed.as_secs_f64(),
             legacy_elapsed.as_secs_f64() / batch_elapsed.as_secs_f64()
@@ -1986,7 +2223,9 @@ mod batch_export_tests {
 
         legacy_db.close().await;
         batch_db.close().await;
-        std::fs::remove_dir_all(root).ok();
+        if generated {
+            std::fs::remove_dir_all(root).ok();
+        }
     }
 
     fn test_item(source: &Path) -> BatchExportItem {

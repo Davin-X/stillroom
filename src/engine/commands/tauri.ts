@@ -27,8 +27,10 @@ import type {
 // Type-safe command wrappers
 export const tauri = {
   library: {
-    scan: (rootPath: string): Promise<ScanResult> =>
-      invoke("scan_library", { rootPath }),
+    scan: (rootPath: string, force = false): Promise<ScanResult> =>
+      invoke("scan_library", { rootPath, force }),
+
+    cancelScan: (): Promise<void> => invoke("cancel_scan"),
 
     importFiles: (paths: string[]): Promise<ScanResult> =>
       invoke("import_files", { paths }),

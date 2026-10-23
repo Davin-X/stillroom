@@ -44,7 +44,17 @@ interface LibraryState {
 
   // Status
   busy: boolean;
-  progress: { phase: string; processed: number; total: number } | null;
+  canceling: boolean;
+  progress: {
+    phase: string;
+    processed: number;
+    total: number;
+    bytesProcessed?: number;
+    bytesTotal?: number;
+    filesProcessed?: number;
+    filesTotal?: number;
+    currentFile?: string;
+  } | null;
   notice: string | null;
 
   // Computed
@@ -110,6 +120,7 @@ interface LibraryState {
 
   // Actions - Duplicates
   scanDuplicates: () => Promise<void>;
+  cancelScan: () => Promise<void>;
   clearDuplicates: () => void;
 
   // Actions - UI
@@ -245,6 +256,7 @@ export const useLibraryStore = create<LibraryState>()(
       screen: "Library",
       viewerScope: "library",
       busy: false,
+      canceling: false,
       progress: null,
       notice: null,
       
@@ -717,25 +729,39 @@ export const useLibraryStore = create<LibraryState>()(
 
       // Duplicates
       scanDuplicates: async () => {
-        set({ busy: true, progress: { phase: "hashing", processed: 0, total: 0 } });
+        set({ busy: true, canceling: false, progress: { phase: "hashing", processed: 0, total: 0 } });
         try {
           const duplicates = await tauri.duplicates.scan();
-          set({ duplicates, busy: false, progress: null });
-          get().showNotice(duplicates.length ? `Found ${duplicates.length} duplicate groups` : "No duplicates found");
+          const cancelled = get().canceling;
+          set({ duplicates: cancelled ? get().duplicates : duplicates, busy: false, canceling: false, progress: null });
+          get().showNotice(cancelled
+            ? "Duplicate scan cancelled. Completed hashes are saved for the next scan."
+            : duplicates.length ? `Found ${duplicates.length} duplicate groups` : "No duplicates found");
         } catch (e) {
-          set({ busy: false, progress: null, notice: "Duplicate scan failed" });
+          const cancelled = get().canceling;
+          set({ busy: false, canceling: false, progress: null, notice: cancelled ? "Duplicate scan cancelled." : "Duplicate scan failed" });
+        }
+      },
+
+      cancelScan: async () => {
+        set({ canceling: true });
+        try {
+          await tauri.library.cancelScan();
+        } catch (e) {
+          set({ canceling: false, notice: `Could not cancel scan: ${String(e)}` });
         }
       },
 
       clearDuplicates: () => set({ duplicates: [] }),
 
       // UI
-      setBusy: (busy) => set({ busy }),
+      setBusy: (busy) => set({ busy, ...(busy ? {} : { canceling: false }) }),
       setProgress: (progress) => set({ progress }),
       showNotice: (text) => {
         set({ notice: text });
         if (text) {
-          setTimeout(() => set({ notice: "" }), 3600);
+          const warning = /failed|could not|cannot access|not a folder|could not read|no media files found|no supported media/i.test(text);
+          setTimeout(() => set({ notice: "" }), warning ? 8000 : 3600);
         }
       },
 

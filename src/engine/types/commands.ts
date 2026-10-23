@@ -6,6 +6,8 @@ import type { AppSettings } from "./settings";
 
 export interface ScanResult {
   items: MediaItem[];
+  discoveredCount: number;
+  cancelled: boolean;
   albums: Album[];
   tags: Tag[];
   sessions: ImportSession[];
@@ -121,6 +123,12 @@ export interface ImportProgressEvent {
   processed: number;
   total: number;
   currentFile?: string;
+  bytesProcessed?: number;
+  bytesTotal?: number;
+  filesProcessed?: number;
+  filesTotal?: number;
+  currentFileBytes?: number;
+  currentFileSize?: number;
 }
 
 export interface ThumbnailReadyEvent {
@@ -150,7 +158,8 @@ export interface LibraryFolder {
 // Using a mapped type for command signatures
 export type TauriCommandSignature = {
   // Library
-  scan_library: (rootPath: string) => ScanResult;
+  scan_library: (rootPath: string, force: boolean) => ScanResult;
+  cancel_scan: () => void;
   import_files: (paths: string[]) => ScanResult;
   get_library_items: (filter: LibraryFilterDTO) => MediaItem[];
   get_item_thumbnail: (request: ThumbnailRequest) => ThumbnailResponse;

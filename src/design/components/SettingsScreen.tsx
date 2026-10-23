@@ -102,7 +102,7 @@ export function SettingsScreen(props: {
         return;
       }
       for (const folder of folders) {
-        await tauri.library.scan(folder.path);
+        await tauri.library.scan(folder.path, true);
       }
       await loadLibrary();
       showNotice(`Rebuilt ${folders.length} folder${folders.length === 1 ? "" : "s"}.`);

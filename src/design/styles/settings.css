@@ -1023,8 +1023,13 @@
 }
 
 .sources-manager {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
+  min-height: 0;
+}
+
+.sources-table-viewport {
   min-height: 0;
 }
 
@@ -1313,7 +1318,7 @@
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  margin: 2px 0 0;
+  margin: 0;
   color: var(--muted);
   font-size: 11.5px;
   line-height: 1.5;
@@ -1323,6 +1328,36 @@
   flex: 0 0 auto;
   margin-top: 1px;
   color: var(--faint);
+}
+
+.sources-sheet .sources-manager {
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.sources-sheet .sources-filter {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.sources-sheet .sources-table-viewport {
+  flex: 1 1 auto;
+  overflow: auto;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+}
+
+.sources-sheet .sources-table {
+  border: 0;
+  border-radius: 0;
+}
+
+.sources-sheet .sources-note {
+  flex: 0 0 auto;
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 8px 8px;
+  background: var(--surface-2);
 }
 
 .sources-sr-only {

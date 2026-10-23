@@ -1,0 +1,167 @@
+/* Shared component contract. Load after app-specific styles so one set of
+   tokens governs the final appearance of controls across every workspace. */
+.app-frame {
+  --control-height: 36px;
+  --control-radius: 8px;
+  --control-border: var(--line-strong);
+  --panel-radius: 12px;
+  --panel-border: var(--line);
+  --panel-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.app-frame.dark {
+  --panel-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
+/* Shared geometry for labeled action buttons. Their semantic variants retain
+   their own fill and intent while using the same height, radius and type. */
+.app-frame :is(
+  .primary-button,
+  .quiet-button,
+  .secondary-button,
+  .outline-button,
+  .danger-button,
+  .toolbar-button
+) {
+  min-height: var(--control-height);
+  border-radius: var(--control-radius);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1;
+}
+
+.app-frame .toolbar-button {
+  height: var(--control-height);
+  padding-inline: 12px;
+  border-color: var(--control-border);
+}
+
+.app-frame :is(.quiet-button, .secondary-button, .outline-button) {
+  border-color: var(--control-border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.app-frame :is(.quiet-button, .secondary-button, .outline-button):hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--surface-2);
+  color: var(--accent-text);
+}
+
+.app-frame .primary-button {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.app-frame .primary-button:hover:not(:disabled) {
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
+}
+
+.app-frame .danger-button {
+  border-color: var(--danger-line);
+  background: transparent;
+  color: var(--danger);
+}
+
+.app-frame .danger-button:hover:not(:disabled) {
+  border-color: var(--danger);
+  background: var(--danger-tint);
+  color: var(--danger);
+}
+
+.app-frame :is(
+  .primary-button,
+  .quiet-button,
+  .secondary-button,
+  .outline-button,
+  .danger-button,
+  .toolbar-button,
+  .icon-button,
+  .layout-switcher button,
+  .zoom-control button,
+  .sort-control button
+):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 58%, transparent);
+  outline-offset: 2px;
+}
+
+.app-frame :is(
+  .primary-button,
+  .quiet-button,
+  .secondary-button,
+  .outline-button,
+  .danger-button,
+  .toolbar-button,
+  .icon-button
+):disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+  box-shadow: none;
+}
+
+/* Segmented controls share one track and selected treatment. */
+.app-frame :is(.layout-switcher, .zoom-control, .sort-control) {
+  height: 38px;
+  min-height: 38px;
+  padding: 3px;
+  border-color: var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.app-frame :is(.layout-switcher button, .zoom-control button, .sort-control button) {
+  min-height: 30px;
+  border-radius: 7px;
+  color: var(--muted);
+}
+
+.app-frame :is(.layout-switcher button.selected, .zoom-control button.selected) {
+  background: var(--surface);
+  color: var(--accent-text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), inset 0 0 0 1px var(--line);
+}
+
+/* Shared surface treatment for the app's information panels. */
+.app-frame :is(
+  .sources-manager,
+  .batch-panel,
+  .batch-options,
+  .batch-preview,
+  .proof-card,
+  .export-destination,
+  .inspector-section
+) {
+  border-color: var(--panel-border);
+  border-radius: var(--panel-radius);
+  box-shadow: var(--panel-shadow);
+}
+
+.app-frame :is(.sources-table, .gallery-grid.layout-details) {
+  border-color: var(--panel-border);
+  border-radius: var(--panel-radius);
+}
+
+.app-frame :is(.sources-table th, .details-header-sticky) {
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+}
+
+.app-frame :is(.sources-table td, .gallery-grid.layout-details .tile-caption) {
+  color: var(--text);
+}
+
+/* Motion preference follows the OS without changing control affordances. */
+@media (prefers-reduced-motion: reduce) {
+  .app-frame :is(button, [role="button"], a, summary, select, input[type="range"], .toggle-track, .toggle-track::after) {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

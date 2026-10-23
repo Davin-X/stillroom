@@ -11,6 +11,7 @@ import {
   useBatchStore,
   useSettingsStore,
   useSystemDark,
+  useThumbnailSize,
   applyTheme,
   useDraftTransforms,
   draftTransformStyle,
@@ -48,6 +49,15 @@ function draftImageStyle(transforms: Map<string, DraftTransform> | undefined, it
   const transform = draftTransformStyle(transforms?.get(itemId));
   return transform ? { transform } : undefined;
 }
+
+function startConfiguredSlideshow(items: MediaItem[], startId?: string | null) {
+  const preferences = useSettingsStore.getState();
+  const slideshow = useSlideshowStore.getState();
+  slideshow.setInterval(preferences.slideshowInterval);
+  slideshow.setShuffle(preferences.slideshowShuffle);
+  slideshow.setLoop(preferences.slideshowLoop);
+  slideshow.open(items, startId);
+}
 import type { MediaItem, MediaKind } from "../engine/types/media";
 import type { LibraryFolder } from "../engine/types/commands";
 import { SettingsScreen } from "../design/components/SettingsScreen";
@@ -55,7 +65,7 @@ import { SourcesManager } from "../design/components/SourcesManager";
 import { SlideshowOverlay } from "../design/components/SlideshowOverlay";
 import { ContextMenu } from "../design/components/ContextMenu";
 import { BrandMark } from "../design/components/BrandMark";
-import { GearIcon, SunIcon, MoonIcon, LibraryIcon, AlbumsIcon, ViewerIcon, DuplicatesIcon, EditIcon, BatchIcon, SearchIcon, PlusIcon, MinusIcon, MoreIcon, InspectorIcon, FolderIcon, GridIcon, OverviewIcon, ColumnsIcon, DetailsIcon, TimelineIcon, HeartIcon, EyeIcon, EyeOffIcon, FullscreenIcon, RotateIcon, CropIcon, FlipIcon, PlayIcon, PauseIcon, SparkleIcon, UsersIcon, TagIcon, ImageOffIcon, ShareIcon, CheckIcon, StopIcon } from "../design/components/icons";
+import { GearIcon, SunIcon, MoonIcon, LibraryIcon, AlbumsIcon, ViewerIcon, DuplicatesIcon, EditIcon, BatchIcon, SearchIcon, PlusIcon, MinusIcon, MoreIcon, InspectorIcon, FolderIcon, GridIcon, OverviewIcon, DetailsIcon, TimelineIcon, HeartIcon, EyeIcon, EyeOffIcon, FullscreenIcon, RotateIcon, CropIcon, FlipIcon, PlayIcon, PauseIcon, SparkleIcon, UsersIcon, TagIcon, ImageOffIcon, ShareIcon, CheckIcon, StopIcon, TrashIcon } from "../design/components/icons";
 
 type Screen = "Library" | "Albums" | "Viewer" | "Duplicates" | "Edit" | "Batch" | "Hidden" | "Settings";
 
@@ -152,6 +162,17 @@ function App() {
   }, []);
 
   const library = useLibraryStore();
+  const settingsHydrated = useSettingsStore((s) => s._hydrated);
+  const defaultLayout = useSettingsStore((s) => s.defaultLayout);
+
+  // Apply the saved library layout once settings are ready, and whenever the
+  // user returns to the whole library. Avoid changing the current view while
+  // they are actively browsing it.
+  useEffect(() => {
+    if (settingsHydrated && screen === "Library" && !library.activeAlbum) {
+      library.setLayout(defaultLayout);
+    }
+  }, [settingsHydrated, screen, defaultLayout, library.activeAlbum, library.setLayout]);
 
   // Sidebar summary in one pass. The rows used to run a filter + reduce over
   // the whole library each, i.e. a dozen scans per render, which is costly at
@@ -219,6 +240,7 @@ function App() {
   const edit = useEditStore();
   const batch = useBatchStore();
   const settings = useSettingsStore();
+
 
   // Leaving the Viewer screen must close the viewer store too, otherwise its
   // isOpen flag lingers and a later "Viewer" nav click would look like a
@@ -593,7 +615,7 @@ function App() {
     }
     // Read the action off the store instead of subscribing to it: advancing
     // slides should only re-render the overlay, never the whole app.
-    useSlideshowStore.getState().open(scope, library.inspectedId);
+    startConfiguredSlideshow(scope, library.inspectedId);
   }, [library.items, library.visibleItems, library.inspectedId, showNotice]);
 
   const openAlbumDialog = useCallback((seedIds?: string[]) => {
@@ -853,7 +875,7 @@ function App() {
   const addItemsToAlbum = async (albumId: string) => {
     let paths: string[];
     try {
-      const selected = await open({
+      const selected = await openFileDialog({
         directory: false,
         multiple: true,
         filters: [{ name: "Media", extensions: MEDIA_EXTENSIONS }],
@@ -956,6 +978,11 @@ function App() {
   };
 
   const openScreen = (next: Screen) => {
+    // Below tablet width the sidebar is an overlay drawer. Dismiss it after
+    // navigation so it cannot cover the newly opened screen.
+    if (window.innerWidth <= 900 && library.sidebarOpen) {
+      library.toggleSidebar();
+    }
     // The Library item in the sidebar is the way back to the whole
     // collection; without this, an active album kept filtering the grid and
     // Library still looked empty after leaving the album.
@@ -1013,7 +1040,7 @@ function App() {
 const importFiles = async () => {
   let paths: string[];
   try {
-    const selected = await open({
+    const selected = await openFileDialog({
       directory: false,
       multiple: true,
       filters: [{ name: "Media", extensions: MEDIA_EXTENSIONS }]
@@ -1050,7 +1077,7 @@ const importFolder = async () => {
   // problem (and a genuine cancel stays silent).
   let rootPath: string;
   try {
-    const selected = await open({ directory: true, multiple: false });
+    const selected = await openFileDialog({ directory: true, multiple: false });
     if (!selected) return;
     rootPath = Array.isArray(selected) ? selected[0] : selected;
   } catch (e) {
@@ -1107,6 +1134,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
       className={`app-frame ${dark ? "dark" : ""}`}
       style={{ "--sidebar-width": `${sidebarWidth}px` } as React.CSSProperties}
     >
+      <a className="skip-to-content" href="#main-content">Skip to main content</a>
       <header className="topbar" onMouseDown={beginTopbarDrag} onDoubleClick={handleTopbarDoubleClick}>
         <div className="topbar-brand"><BrandMark size={26} /><b>Stillroom</b></div>
         <div className="topbar-context">
@@ -1116,10 +1144,8 @@ handlersRef.current = { importFolder, importFiles, showNotice };
               : null;
             const activeAlbumName = library.activeAlbum ? activeAlbumRecord?.name : null;
             const inAlbum = Boolean(library.activeAlbum);
-            const filter = library.filter;
-
             if (screen === "Library") {
-              if (inAlbum) return <span>{activeAlbumName}</span>;
+              if (inAlbum) return <span>{activeAlbumName ?? "Album"}</span>;
               return <span className="muted">Library</span>;
             }
             if (screen === "Albums") return <span>Albums</span>;
@@ -1132,6 +1158,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             className="icon-button"
             type="button"
             aria-label={library.sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+            aria-pressed={library.sidebarOpen}
             title={library.sidebarOpen ? "Hide sidebar (⌥⌘S)" : "Show sidebar (⌥⌘S)"}
             onClick={() => library.toggleSidebar()}
           >
@@ -1140,8 +1167,14 @@ handlersRef.current = { importFolder, importFiles, showNotice };
           <button
             className="icon-button"
             type="button"
-            aria-label={library.showInspector ? "Hide inspector" : "Show inspector"}
-            title={library.showInspector ? "Hide inspector (⌥⌘I)" : "Show inspector (⌥⌘I)"}
+            aria-label={screen !== "Library" && screen !== "Hidden"
+              ? "Inspector available in Library and Hidden"
+              : (library.showInspector ? "Hide inspector" : "Show inspector")}
+            aria-pressed={(screen === "Library" || screen === "Hidden") && library.showInspector}
+            disabled={screen !== "Library" && screen !== "Hidden"}
+            title={screen === "Library" || screen === "Hidden"
+              ? (library.showInspector ? "Hide inspector (⌥⌘I)" : "Show inspector (⌥⌘I)")
+              : "Inspector is available in Library and Hidden"}
             onClick={() => library.toggleInspector()}
           >
             <InspectorIcon size={18} />
@@ -1180,6 +1213,9 @@ handlersRef.current = { importFolder, importFiles, showNotice };
                   key={label}
                   type="button"
                   className={`nav-item ${screen === target ? "active" : ""}`}
+                  aria-label={label}
+                  title={label}
+                  aria-current={screen === target ? "page" : undefined}
                   onClick={() => openScreen(target)}
                 >
                   <span className="nav-icon"><Icon size={18} /></span>
@@ -1289,7 +1325,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
           </div>
         </aside>
 
-        <main className="main-content">
+        <main id="main-content" className="main-content" tabIndex={-1}>
           {screen === "Library" && <LibraryScreen
             items={library.visibleItems}
             inspectedId={library.inspectedId}
@@ -1303,6 +1339,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             onInspectItem={library.inspectItem}
             onToggleSelect={library.toggleSelection}
             onSelectRange={library.selectRange}
+            onSetSelection={library.setSelectedIds}
             onToggleSelectAll={library.toggleSelectAll}
             onClearSelection={library.clearSelection}
             onOpenBatch={() => openScreen("Batch")}
@@ -1412,7 +1449,12 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             onExport={async (inPlace = false) => {
               const item = edit.item;
               if (!item) return;
+              const sourceExtension = String(item.extension || item.name.split(".").pop() || "").toLowerCase();
               if (inPlace) {
+                if (!(["jpg", "jpeg", "png", "webp"].includes(sourceExtension))) {
+                  showNotice("Replace original supports JPEG, PNG, and WebP. Save a copy instead.");
+                  return;
+                }
                 const ok = window.confirm("This will overwrite the original file with the edited version. This cannot be undone. Continue?");
                 if (!ok) return;
               }
@@ -1440,10 +1482,24 @@ handlersRef.current = { importFolder, importFiles, showNotice };
               ctx.translate(canvas.width / 2, canvas.height / 2);
               ctx.rotate((rot * Math.PI) / 180);
               ctx.scale(v.flip ? -1 : 1, 1);
-              ctx.filter = "brightness(" + (100 + (v.exposure || 0)) + "%) contrast(" + (100 + (v.contrast || 0)) + "%) saturate(" + (100 + (v.saturation || 0)) + "%)";
+              const warmth = Number(v.warmth || 0);
+              ctx.filter = [
+                `brightness(${100 + (v.exposure || 0) + (v.shadows || 0) * 0.22 + (v.highlights || 0) * 0.1}%)`,
+                `contrast(${100 + (v.contrast || 0) - (v.shadows || 0) * 0.08 + (v.highlights || 0) * 0.12}%)`,
+                `saturate(${100 + (v.saturation || 0)}%)`,
+                `sepia(${Math.abs(warmth) * 0.004})`,
+                `hue-rotate(${warmth < 0 ? 180 : 0}deg)`,
+              ].join(" ");
               ctx.drawImage(img, srcX, srcY, srcW, srcH, -baseW / 2, -baseH / 2, baseW, baseH);
-                const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, "image/jpeg", 0.92));
+                const outputType = inPlace
+                  ? sourceExtension === "png" ? "image/png" : sourceExtension === "webp" ? "image/webp" : "image/jpeg"
+                  : "image/jpeg";
+                const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, outputType, 0.92));
                 if (!blob) { showNotice("Export failed"); return; }
+                if (inPlace && blob.type !== outputType) {
+                  showNotice("This image format cannot be preserved here. Save a copy instead.");
+                  return;
+                }
                 let path: any;
                 if (inPlace) {
                   path = item.path;
@@ -1481,7 +1537,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             onSetMaxDimension={batch.setMaxDimension}
             onSetStep={batch.setStep}
             onChooseFolder={async () => {
-              const folder = await open({ directory: true, multiple: false, title: "Choose export folder" });
+              const folder = await openFileDialog({ directory: true, multiple: false, title: "Choose export folder" });
               if (typeof folder === "string") batch.setOutputFolder(folder);
             }}
             onOpenFolder={() => { if (batch.outputFolder) tauri.items.openFolder(batch.outputFolder); }}
@@ -2041,6 +2097,8 @@ function VideoThumb({ src, name, className }: { src: string; name?: string; clas
 }
 
 function VideoPlayer({ src, name, onFullscreen }: { src: string; name?: string; onFullscreen?: () => void }) {
+  const videoAutoPlay = useSettingsStore((s) => s.videoAutoPlay);
+  const videoLoop = useSettingsStore((s) => s.videoLoop);
   const ref = useRef<HTMLVideoElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
@@ -2114,7 +2172,7 @@ function VideoPlayer({ src, name, onFullscreen }: { src: string; name?: string; 
 
   return (
     <>
-      <video ref={ref} className="viewer-video" src={src} title={name} playsInline preload="metadata" onClick={toggle} tabIndex={0} />
+      <video ref={ref} className="viewer-video" src={src} title={name} autoPlay={videoAutoPlay} loop={videoLoop} playsInline preload="metadata" onClick={toggle} tabIndex={0} />
       {/* macOS hides a video's native control bar unless the pointer is over the
           frame, so playback gets a permanent bar of our own instead. */}
       <div className="viewer-video-controls">
@@ -2223,7 +2281,7 @@ function HiddenScreen(props: any) {
     if (request.kind === "slideshow") {
       const ids = new Set(request.ids);
       const scope = library.hiddenItems.filter((item) => ids.has(item.id));
-      if (scope.length) useSlideshowStore.getState().open(scope, library.inspectedId);
+      if (scope.length) startConfiguredSlideshow(scope, library.inspectedId);
       return;
     }
     if (request.kind === "edit") {
@@ -2292,6 +2350,7 @@ function HiddenScreen(props: any) {
         onInspectItem={library.inspectItem}
         onToggleSelect={library.toggleSelection}
         onSelectRange={selectRange}
+        onSetSelection={library.setSelectedIds}
         onToggleSelectAll={toggleSelectAll}
         onClearSelection={library.clearSelection}
         onChangeFilter={library.setHiddenFilter}
@@ -2352,6 +2411,8 @@ function HiddenScreen(props: any) {
 function LibraryScreen(props: any) {
   const library = useLibraryStore();
   const draftTransforms = useDraftTransforms();
+  const thumbnailSize = useThumbnailSize();
+  const settingsStore = useSettingsStore();
   // Hidden items are masked by default. A pointer-down reveals just that tile
   // while it is held; releasing (or leaving the tile) puts the veil back.
   const [revealedIds, setRevealedIds] = useState<Set<string>>(() => new Set());
@@ -2543,17 +2604,57 @@ function LibraryScreen(props: any) {
 
   const renderedItems = props.items.slice(0, renderLimit);
 
-  // Group items by year-month for timeline layout
-  const timelineGroups: { label: string; items: any[] }[] = props.layout === "timeline"
-    ? (Object.entries(
-        renderedItems.reduce((acc: Record<string, any[]>, item: any) => {
-          const d = new Date(item.modifiedAt);
-          const key = d.toLocaleString("en", { year: "numeric", month: "long" });
-          (acc[key] = acc[key] || []).push(item);
-          return acc;
-        }, {} as Record<string, any[]>)
-      ) as [string, any[]][]).map(([label, items]) => ({ label, items }))
+  // Timeline groups use the photo's capture date when available, with file
+  // modification time as a reliable fallback for screenshots and videos.
+  const timelineGroups: { key: string; label: string; items: any[]; count: number }[] = props.layout === "timeline"
+    ? (() => {
+        const grouped = new Map<string, { timestamp: number; items: any[] }>();
+        for (const item of props.items) {
+          const timestamp = item.capturedAt ?? item.modifiedAt;
+          const date = new Date(timestamp);
+          const key = `${date.getFullYear()}-${date.getMonth()}`;
+          const group = grouped.get(key) ?? { timestamp, items: [] as any[] };
+          group.timestamp = Math.max(group.timestamp, timestamp);
+          group.items.push(item);
+          grouped.set(key, group);
+        }
+        return [...grouped.entries()]
+          .sort((a, b) => b[1].timestamp - a[1].timestamp)
+          .map(([key, group]) => ({
+            key,
+            label: new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }).format(group.timestamp),
+            items: group.items,
+            count: group.items.length,
+          }));
+      })()
     : [];
+  const renderedTimelineIds = new Set(renderedItems.map((item: any) => item.id));
+  const visibleTimelineGroups = timelineGroups
+    .map((group) => ({ ...group, items: group.items.filter((item: any) => renderedTimelineIds.has(item.id)) }))
+    .filter((group) => group.items.length > 0);
+
+  const captureDate = (item: any) => item.capturedAt ?? item.modifiedAt;
+  const sortDetailsBy = (sortBy: typeof library.sortBy) => {
+    library.setSort(sortBy, library.sortBy === sortBy && library.sortOrder === "asc" ? "desc" : "asc");
+  };
+  const detailsHeader = (label: string, sortBy?: typeof library.sortBy) => (
+    <div className="details-col">
+      {sortBy ? (
+        <button type="button" className="details-sort-header" onClick={() => sortDetailsBy(sortBy)}>
+          {label}<span aria-hidden="true">{library.sortBy === sortBy ? (library.sortOrder === "asc" ? "↑" : "↓") : "↕"}</span>
+        </button>
+      ) : label}
+    </div>
+  );
+  const toggleTimelineGroup = (items: any[]) => {
+    const groupIds = items.map((item) => item.id);
+    const groupIdSet = new Set(groupIds);
+    const allSelected = groupIds.length > 0 && groupIds.every((id) => props.selectedIds.includes(id));
+    const next = allSelected
+      ? props.selectedIds.filter((id: string) => !groupIdSet.has(id))
+      : [...new Set([...props.selectedIds, ...groupIds])];
+    props.onSetSelection?.(next);
+  };
 
   const lastClickedRef = useRef<string | null>(null);
 
@@ -2770,13 +2871,49 @@ function LibraryScreen(props: any) {
                 )}
                 <span className="toolbar-divider" aria-hidden="true" />
                 <div className="layout-switcher" aria-label="Gallery layout">
-                  {(["grid", "columns", "details", "timeline"] as const).map((l) => {
-                    const Icon = l === "grid" ? GridIcon : l === "columns" ? ColumnsIcon : l === "details" ? DetailsIcon : TimelineIcon;
+                  {(["grid", "details", "timeline"] as const).map((l) => {
+                    const Icon = l === "grid" ? GridIcon : l === "details" ? DetailsIcon : TimelineIcon;
                     return (
                       <button key={l} type="button" aria-label={l} title={l} className={props.layout === l ? "selected" : ""} onClick={() => props.onChangeLayout(l)}><Icon size={14} /></button>
                     );
                   })}
                 </div>
+                <div className="zoom-control" aria-label="Thumbnail size">
+                  {(["small", "medium", "large"] as const).map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      className={`zoom-step ${thumbnailSize === s ? "selected" : ""}`}
+                      onClick={() => settingsStore.update("thumbnailSize", s)}
+                      title={s === "small" ? "Small thumbnails" : s === "medium" ? "Medium thumbnails" : "Large thumbnails"}
+                    >
+                      {s === "small" ? "S" : s === "medium" ? "M" : "L"}
+                    </button>
+                  ))}
+                </div>
+                {!props.hiddenView && (
+                  <div className="sort-control">
+                    <select
+                      aria-label="Sort library"
+                      value={library.sortBy}
+                      onChange={(e) => library.setSort(e.target.value as typeof library.sortBy, library.sortOrder)}
+                    >
+                      <option value="capturedAt">Date captured</option>
+                      <option value="modifiedAt">Date modified</option>
+                      <option value="name">Name</option>
+                      <option value="size">File size</option>
+                      <option value="kind">Media type</option>
+                    </select>
+                    <button
+                      type="button"
+                      aria-label={library.sortOrder === "asc" ? "Sort ascending" : "Sort descending"}
+                      title={library.sortOrder === "asc" ? "Ascending" : "Descending"}
+                      onClick={() => library.setSort(library.sortBy, library.sortOrder === "asc" ? "desc" : "asc")}
+                    >
+                      {library.sortOrder === "asc" ? "↑" : "↓"}
+                    </button>
+                  </div>
+                )}
               </div>
               <div className="selection-cluster">
                 {(() => {
@@ -2810,7 +2947,6 @@ function LibraryScreen(props: any) {
                 </button>
               );
             })}
-            <span className="sort-hint">Sorted by <strong>Date captured</strong></span>
           </div>
 
           {props.selectedIds.length > 0 && (
@@ -2879,6 +3015,16 @@ function LibraryScreen(props: any) {
                   <BatchIcon size={13} /> Batch
                 </button>
               )}
+{!props.hiddenView && (
+                <button
+                  type="button"
+                  className="selection-bar-action selection-bar-action-danger"
+                  onClick={() => props.onRequestDeleteItems?.(props.selectedIds)}
+                  title="Move selected items to Trash"
+                >
+                  <TrashIcon size={13} /> Delete
+                </button>
+              )}
               <span className="selection-bar-divider" aria-hidden="true" />
               <button
                 type="button"
@@ -2893,17 +3039,16 @@ function LibraryScreen(props: any) {
           )}
         </header>
 
-        {props.layout === "details" && (
-          <div className="details-header-sticky">
-            <div className="details-col" title="Thumbnail"><span className="header-icon"><ImageOffIcon size={11} /></span></div>
-            <div className="details-col">Name</div>
-            <div className="details-col">Date</div>
-            <div className="details-col">Kind</div>
-            <div className="details-col">Size</div>
-          </div>
-        )}
-
         <div className="library-grid-container" ref={scrollRef} onScroll={handleGridScroll}>
+          {props.layout === "details" && (
+            <div className="details-header-sticky">
+              <div className="details-col details-preview-heading">Preview</div>
+              {detailsHeader("Name", "name")}
+              {detailsHeader("Captured", "capturedAt")}
+              {detailsHeader("Kind", "kind")}
+              {detailsHeader("Size", "size")}
+            </div>
+          )}
           {(() => {
             if (props.layout === "details") {
               return (
@@ -2924,13 +3069,13 @@ function LibraryScreen(props: any) {
                           ) : null}
                         </span>
                         <span className={`tile-caption${masked(item) ? " hidden-caption" : ""}`}>
-                                <b>{item.name}</b>
-                                <small className="tile-date">{new Date(item.modifiedAt).toLocaleDateString()}</small>
+                                <b>{masked(item) ? "Hidden item" : item.name}</b>
+                                <small className="tile-date">{new Date(captureDate(item)).toLocaleDateString()}</small>
                                 <small className="tile-kind">
                                   <KindDot kind={item.kind} />
                                   {item.kind === 'video' ? 'Video' : item.kind === 'raw' ? 'RAW' : 'Photo'}
                                 </small>
-                                <small className="tile-size">{item.size > 1024*1024 ? (item.size/1024/1024).toFixed(1)+' MB' : (item.size/1024).toFixed(0)+' KB'}</small>
+                                <small className="tile-size">{formatBytesSimple(item.size)}</small>
                               </span>
                       </button>
                     </article>
@@ -2941,11 +3086,26 @@ function LibraryScreen(props: any) {
             }
             if (props.layout === "timeline") {
               return (
-                <div className="gallery-grid layout-timeline">
+                <div className={`gallery-grid layout-timeline thumb-${thumbnailSize}`}>
                   {timelineGroups.length === 0 ? emptyView() : (
-                    timelineGroups.map(({ label, items }) => (
-                      <React.Fragment key={label}>
-                        <div className="timeline-group"><h3>{label}</h3></div>
+                    visibleTimelineGroups.map(({ key, label, items, count }) => {
+                      const groupItems = timelineGroups.find((group) => group.key === key)?.items ?? items;
+                      const allSelected = groupItems.length > 0 && groupItems.every((item: any) => props.selectedIds.includes(item.id));
+                      return <React.Fragment key={key}>
+                        <div className="timeline-group">
+                          <div className="timeline-date-marker" aria-hidden="true"><span /></div>
+                          <h3>{label}</h3>
+                          <span className="timeline-count">{count} {count === 1 ? "item" : "items"}</span>
+                          <button
+                            type="button"
+                            className="timeline-select-group"
+                            aria-pressed={allSelected}
+                            onClick={() => toggleTimelineGroup(groupItems)}
+                            title={`Select or deselect all ${label} items`}
+                          >
+                            <span className="timeline-select-box">{allSelected ? <CheckIcon size={11} /> : null}</span>{allSelected ? "Selected" : "Select all"}
+                          </button>
+                        </div>
                         {items.map((item: any) => (
                           <article key={item.id} className={tileClass(item)} onContextMenu={(e: any) => { concealItem(item.id); props.onContextMenu(itemContextMenu(item), e); }}>
                             <div className="tile-select-check">
@@ -2963,24 +3123,24 @@ function LibraryScreen(props: any) {
                               </span>
                               <span className={`tile-caption${masked(item) ? " hidden-caption" : ""}`}>
                                   <b>{item.name}</b>
-                                  <small className="tile-date">{new Date(item.modifiedAt).toLocaleDateString()}</small>
+                                  <small className="tile-date">{new Date(captureDate(item)).toLocaleDateString()}</small>
                                   <small className="tile-kind">
                                     <KindDot kind={item.kind} />
                                     {item.kind === 'video' ? 'Video' : item.kind === 'raw' ? 'RAW' : 'Photo'}
                                   </small>
-                                  <small className="tile-size">{item.size > 1024*1024 ? (item.size/1024/1024).toFixed(1)+' MB' : (item.size/1024).toFixed(0)+' KB'}</small>
+                                  <small className="tile-size">{formatBytesSimple(item.size)}</small>
                                 </span>
                             </button>
                           </article>
                         ))}
-                      </React.Fragment>
-                    ))
+                      </React.Fragment>;
+                    })
                   )}
                 </div>
               );
             }
             return (
-              <div className={`gallery-grid layout-${props.layout}`}>
+              <div className={`gallery-grid layout-${props.layout} thumb-${thumbnailSize}`}>
                 {renderedItems.map((item: any) => (
                   <article key={item.id} className={tileClass(item)} onContextMenu={(e: any) => { concealItem(item.id); props.onContextMenu(itemContextMenu(item), e); }}>
                     <div className="tile-select-check">
@@ -2998,9 +3158,9 @@ function LibraryScreen(props: any) {
                       </span>
                       <span className={`tile-caption${masked(item) ? " hidden-caption" : ""}`}>
                                 <b>{item.name}</b>
-                                <small className="tile-date">{new Date(item.modifiedAt).toLocaleDateString()}</small>
+                                <small className="tile-date">{new Date(captureDate(item)).toLocaleDateString()}</small>
                                 <small className="tile-kind">{item.kind === 'video' ? 'Video' : item.kind === 'raw' ? 'RAW' : 'Photo'}</small>
-                                <small className="tile-size">{item.size > 1024*1024 ? (item.size/1024/1024).toFixed(1)+' MB' : (item.size/1024).toFixed(0)+' KB'}</small>
+                                <small className="tile-size">{formatBytesSimple(item.size)}</small>
                               </span>
                     </button>
                   </article>
@@ -3018,17 +3178,12 @@ function LibraryScreen(props: any) {
           )}
         </div>
         <div className="library-footer-status">
-          <span>Showing <strong>{props.items.length}</strong> items</span>
-          <span>·</span>
-          <span>Selected total: <strong>{(() => {
-            const sel = props.items.filter((i:any) => props.selectedIds.includes(i.id));
-            const bytes = sel.reduce((a:any,i:any)=>a+(i.size||0),0);
-            return bytes > 1024*1024 ? (bytes/1024/1024).toFixed(1)+' MB' : (bytes/1024).toFixed(0)+' KB';
-          })()}</strong></span>
-          <span className="footer-badges">
-            <span className="footer-badge">GPU Accelerated</span>
-            <span className="footer-badge">COLOR: Display P3</span>
-          </span>
+          <span>Showing <strong>{props.items.length.toLocaleString()}</strong> {props.items.length === 1 ? "item" : "items"}</span>
+          {props.selectedIds.length > 0 && <span className="footer-selection-status">
+            {props.selectedIds.length.toLocaleString()} selected
+            <span aria-hidden="true">·</span>
+            <strong>{formatBytesSimple(selectedItems.reduce((sum: number, item: any) => sum + (item.size || 0), 0))}</strong>
+          </span>}
         </div>
       </section>
 
@@ -3054,7 +3209,7 @@ function LibraryScreen(props: any) {
                     </div>
                     <button type="button" className="inspector-close-btn" onClick={props.onToggleInspector} title="Close Inspector (⌥⌘I)">×</button>
                   </div>
-                  <button className={`inspector-image${masked(sel) ? " hidden-obscured" : ""}`} type="button" onDoubleClick={() => props.onOpenViewer(sel.id)} title={masked(sel) ? "Hidden item" : "Double-click to open in viewer"} {...holdHandlers(sel.id)}>
+                  <button className={`inspector-image${masked(sel) ? " hidden-obscured" : ""}`} type="button" aria-label={masked(sel) ? "Hold to reveal preview; double-click to open" : `Open ${sel.name} in viewer`} onDoubleClick={() => props.onOpenViewer(sel.id)} title={masked(sel) ? "Hold to reveal preview · double-click to open" : "Double-click to open in viewer"} {...holdHandlers(sel.id)}>
                     {sel.kind === "photo" ? (
                       <img src={assetUrl(sel.path)} alt={tileAlt(sel)} style={draftImageStyle(draftTransforms, sel.id)} />
                     ) : sel.kind === "video" ? (
@@ -3094,6 +3249,9 @@ function LibraryScreen(props: any) {
                   <div className="inspector-section">
                     <div className="inspector-section-head"><b>File Info</b></div>
                     <div className="info-card">
+                      {masked(sel) ? (
+                        <div className="inspector-hidden-note">Hold the preview to reveal file details.</div>
+                      ) : <>
                       <div className="info-row">
                         <span className="info-label">Name</span>
                         <span className="info-value" title={sel.name}>{sel.name}</span>
@@ -3118,9 +3276,10 @@ function LibraryScreen(props: any) {
                       {sel.lens && <div className="info-row"><span className="info-label">Lens</span><span className="info-value" title={sel.lens}>{sel.lens}</span></div>}
                       {sel.capturedAt && <div className="info-row"><span className="info-label">Captured</span><span className="info-value">{new Date(sel.capturedAt).toLocaleString()}</span></div>}
                       <div className="info-row"><span className="info-label">Modified</span><span className="info-value">{new Date(sel.modifiedAt).toLocaleString()}</span></div>
+                      </>}
                     </div>
                   </div>
-                  <div className="inspector-tags">
+                  {!masked(sel) && <div className="inspector-tags">
                     <div className="inspector-section-head"><b>App Tags</b></div>
                     <div className="tags-list">
                       {sel.tags?.map((tag: string) => (
@@ -3145,7 +3304,7 @@ function LibraryScreen(props: any) {
                         }
                       }}
                     />
-                  </div>
+                  </div>}
                 </>
               );
             })()
@@ -3389,11 +3548,27 @@ function ViewerScreen(props: any) {
 function EditScreen(props: any) {
   const [pickerQuery, setPickerQuery] = useState("");
   const [confirmReplace, setConfirmReplace] = useState(false);
+  const [showOriginalPreview, setShowOriginalPreview] = useState(false);
+  const [draftTrayOpen, setDraftTrayOpen] = useState(false);
   const draftTransforms = useDraftTransforms();
   const stageRef = useRef<any>(null);
   const [drag, setDrag] = useState<any>(null);
   const values = props.values || {};
+  const hasAdjustments = Object.entries(initialEdits).some(([key, value]) => values[key] !== value);
   const crop = props.crop || { enabled:false, x:0,y:0,width:1,height:1 };
+  const savedDraftItems = (props.items || []).filter((item: any) => {
+    try { return !!localStorage.getItem(`edit:draft:${item.id}`); } catch { return false; }
+  });
+  const previewValues = showOriginalPreview ? initialEdits : values;
+  const warmth = Number(previewValues.warmth || 0);
+  const previewFilter = [
+    `brightness(${100 + (previewValues.exposure || 0) + (previewValues.shadows || 0) * 0.22 + (previewValues.highlights || 0) * 0.1}%)`,
+    `contrast(${100 + (previewValues.contrast || 0) - (previewValues.shadows || 0) * 0.08 + (previewValues.highlights || 0) * 0.12}%)`,
+    `saturate(${100 + (previewValues.saturation || 0)}%)`,
+    `sepia(${Math.abs(warmth) * 0.004})`,
+    `hue-rotate(${warmth < 0 ? 180 : 0}deg)`,
+  ].join(" ");
+  useEffect(() => { setShowOriginalPreview(false); }, [props.item?.id]);
   useEffect(() => {
     if (!drag || !props.item) return;
     const onMove = (e: any) => {
@@ -3403,6 +3578,14 @@ function EditScreen(props: any) {
         const nx = Math.min(Math.max(drag.crop.x + dx, 0), 1 - drag.crop.width);
         const ny = Math.min(Math.max(drag.crop.y + dy, 0), 1 - drag.crop.height);
         props.onSetCrop({ x: nx, y: ny });
+      } else if (typeof drag.crop.aspectRatio === "number") {
+        const ratio = drag.crop.aspectRatio;
+        const widthDeltaFromHeight = dy * ratio / (drag.rect.width / drag.rect.height);
+        const widthDelta = Math.abs(dx) >= Math.abs(widthDeltaFromHeight) ? dx : widthDeltaFromHeight;
+        const maxWidth = Math.min(1 - drag.crop.x, (1 - drag.crop.y) * ratio / (drag.rect.width / drag.rect.height));
+        const width = Math.min(maxWidth, Math.max(0.04, drag.crop.width + widthDelta));
+        const height = width * (drag.rect.width / drag.rect.height) / ratio;
+        props.onSetCrop({ width, height });
       } else {
         const nw = Math.min(Math.max(drag.crop.width + dx, 0.05), 1 - drag.crop.x);
         const nh = Math.min(Math.max(drag.crop.height + dy, 0.05), 1 - drag.crop.y);
@@ -3410,14 +3593,27 @@ function EditScreen(props: any) {
       }
     };
     const onUp = () => setDrag(null);
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
   }, [drag, props]);
   const startDrag = (type: string, e: any) => {
     e.preventDefault(); e.stopPropagation();
     const rect = stageRef.current.getBoundingClientRect();
     setDrag({ type, startX: e.clientX, startY: e.clientY, crop: { ...crop }, rect });
+  };
+  const setCropRatio = (ratio: number | "free") => {
+    const rect = stageRef.current?.getBoundingClientRect();
+    if (!rect?.width || !rect?.height || ratio === "free") {
+      props.onSetCrop({ aspectRatio: ratio });
+      return;
+    }
+    const stageRatio = rect.width / rect.height;
+    const cropRatio = ratio;
+    let width = Math.min(0.78, 0.78 * stageRatio / cropRatio);
+    let height = width * stageRatio / cropRatio;
+    if (height > 0.78) { height = 0.78; width = height * cropRatio / stageRatio; }
+    props.onSetCrop({ aspectRatio: ratio, x: (1 - width) / 2, y: (1 - height) / 2, width, height });
   };
   if (!props.item) {
     const filtered = (props.items || []).filter((it: any) => {
@@ -3484,66 +3680,107 @@ function EditScreen(props: any) {
     <div className="edit-page">
       <div className="page-heading">
         <div><p className="eyebrow">NON-DESTRUCTIVE EDITING</p><h1>{props.item.name}</h1><p className="page-subtitle">Adjustments are applied only when you export a new copy.</p></div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div className="edit-heading-actions">
+          {savedDraftItems.length > 0 && <div className="edit-drafts-menu">
+            <button className="quiet-button edit-drafts-trigger" type="button" aria-expanded={draftTrayOpen} onClick={() => setDraftTrayOpen((open) => !open)}>
+              Drafts <span>{savedDraftItems.length}</span>
+            </button>
+            {draftTrayOpen && <div className="edit-drafts-popover" aria-label="Saved edit drafts">
+              <div className="edit-drafts-popover-head"><b>Saved drafts</b><small>{savedDraftItems.length} {savedDraftItems.length === 1 ? "photo" : "photos"}</small></div>
+              <div className="edit-drafts-list">
+                {savedDraftItems.map((item: any) => (
+                  <div key={item.id} className="edit-draft-card">
+                    <button className="edit-draft-open" type="button" onClick={() => { props.onSaveDraft?.(); props.onOpenEdit?.(item); setDraftTrayOpen(false); }} title={`Open draft for ${item.name}`}>
+                      <img src={props.assetUrl(item.path)} alt="" style={draftImageStyle(draftTransforms, item.id)} />
+                      <span>{item.name}</span>
+                    </button>
+                    <button className="edit-draft-remove" type="button" aria-label={`Remove draft for ${item.name}`} title="Remove draft" onClick={() => { clearEditDraft(item.id); props.onNotice?.("Draft removed"); }}>
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>}
+          </div>}
           <button className="primary-button" type="button" onClick={() => props.onClose?.()}>Select photo</button>
           <span className="saved-indicator"><i /> Original unchanged</span>
         </div>
       </div>
       <div className="editor-layout">
         <div className="edit-canvas">
-          <div ref={stageRef} className="crop-stage" style={{ position: "relative", display: "inline-block" }}>
-            <img src={props.assetUrl(props.item.path)} alt={props.item.name} style={{ transform: `rotate(${values.rotation}deg) scaleX(${values.flip ? -1 : 1})`, filter: `brightness(${100 + values.exposure}%) contrast(${100 + values.contrast}%) saturate(${100 + values.saturation}%)`, maxWidth: "90%", maxHeight: "420px", display: "block" }} />
-            {crop.enabled && (
-              <div className="crop-overlay" style={{ position: "absolute", left: `${crop.x*100}%`, top: `${crop.y*100}%`, width: `${crop.width*100}%`, height: `${crop.height*100}%`, border: "2px solid #fff", boxShadow: "0 0 0 9999px rgba(0,0,0,.45)", cursor: "move" }} onMouseDown={(e) => startDrag("move", e)}>
-                <span className="crop-handle br" style={{ position: "absolute", right: -6, bottom: -6, width: 12, height: 12, background: "#fff", border: "1px solid #333", cursor: "nwse-resize", borderRadius: 2 }} onMouseDown={(e) => startDrag("resize", e)} />
+          <div className="edit-preview-toolbar">
+            <span title={props.item.name}>{props.item.name}</span>
+            <div className="edit-history-controls" aria-label="Edit history">
+              <button type="button" onClick={() => { setShowOriginalPreview(false); props.onUndo(); }} disabled={!props.canUndo} aria-label="Undo" title="Undo">↶</button>
+              <button type="button" onClick={() => { setShowOriginalPreview(false); props.onRedo(); }} disabled={!props.canRedo} aria-label="Redo" title="Redo">↷</button>
+            </div>
+            <button type="button" className={showOriginalPreview ? "active" : ""} aria-pressed={showOriginalPreview} onClick={() => setShowOriginalPreview((value) => !value)}>
+              {showOriginalPreview ? "Show edits" : "Compare"}
+            </button>
+          </div>
+          <div ref={stageRef} className={`crop-stage${showOriginalPreview ? " is-original" : ""}`}>
+            <img src={props.assetUrl(props.item.path)} alt={props.item.name} style={{ transform: `rotate(${previewValues.rotation}deg) scaleX(${previewValues.flip ? -1 : 1})`, filter: previewFilter }} />
+            {crop.enabled && !showOriginalPreview && (
+              <div className="crop-overlay" style={{ position: "absolute", left: `${crop.x*100}%`, top: `${crop.y*100}%`, width: `${crop.width*100}%`, height: `${crop.height*100}%`, border: "2px solid #fff", boxShadow: "0 0 0 9999px rgba(0,0,0,.45)", cursor: "move" }} onPointerDown={(e) => startDrag("move", e)}>
+                <span className="crop-handle br" style={{ position: "absolute", right: -6, bottom: -6, width: 12, height: 12, background: "#fff", border: "1px solid #333", cursor: "nwse-resize", borderRadius: 2 }} onPointerDown={(e) => { e.stopPropagation(); startDrag("resize", e); }} />
               </div>
             )}
           </div>
           <div className="canvas-actions">
-            <button type="button" onClick={() => props.onRotate(90)}><RotateIcon size={14} /> Rotate</button>
-            <button type="button" onClick={props.onFlip}><FlipIcon size={14} /> Flip</button>
-            <button type="button" className={props.crop.enabled ? "active" : ""} onClick={() => props.onSetCrop({ enabled: !props.crop.enabled })}><CropIcon size={14} /> {props.crop.enabled ? "Reset crop" : "Crop preview"}</button>
+            <button type="button" onClick={() => { setShowOriginalPreview(false); props.onRotate(90); }}><RotateIcon size={14} /> Rotate</button>
+            <button type="button" className={values.flip ? "active" : ""} aria-pressed={!!values.flip} onClick={() => { setShowOriginalPreview(false); props.onFlip(); }}><FlipIcon size={14} /> Flip</button>
+            <button type="button" className={props.crop.enabled ? "active" : ""} aria-pressed={!!props.crop.enabled} onClick={() => { setShowOriginalPreview(false); props.crop.enabled ? props.onResetCrop?.() : props.onSetCrop({ enabled: true }); }}><CropIcon size={14} /> {props.crop.enabled ? "Reset crop" : "Crop"}</button>
           </div>
         </div>
         <aside className="edit-controls">
-          <div className="edit-tabs"><button className="active">Light & color</button><button type="button" onClick={() => props.onSetCrop({ enabled: !props.crop.enabled })}>Crop</button></div>
-          <div className="auto-adjust">
-            <div><span className="feature-icon yellow-bg"><SparkleIcon size={17} /></span><div><b>Basic adjustments</b><small>Non-destructive preview</small></div></div>
-            <button type="button" onClick={props.onAuto}>Auto</button>
+          <div className="edit-tabs" role="group" aria-label="Edit tools">
+            <button type="button" className={!props.crop.enabled ? "active" : ""} aria-pressed={!props.crop.enabled} onClick={() => props.onSetCrop({ enabled: false })}>Light &amp; color</button>
+            <button type="button" className={props.crop.enabled ? "active" : ""} aria-pressed={props.crop.enabled} onClick={() => props.onSetCrop({ enabled: true })}>Crop</button>
+          </div>
+          {props.crop.enabled ? (
+            <div className="edit-crop-panel">
+              <div className="edit-panel-heading"><div><b>Crop &amp; straighten</b><small>Drag the frame to reposition it</small></div><button type="button" onClick={props.onResetCrop}>Reset</button></div>
+              <span className="edit-option-label">Aspect ratio</span>
+              <div className="crop-ratio-options" role="group" aria-label="Crop aspect ratio">
+                {[{ label: "Free", value: "free" as const }, { label: "1:1", value: 1 }, { label: "4:3", value: 4 / 3 }, { label: "3:2", value: 3 / 2 }, { label: "16:9", value: 16 / 9 }].map((ratio) => (
+                  <button type="button" key={ratio.label} className={crop.aspectRatio === ratio.value ? "active" : ""} aria-pressed={crop.aspectRatio === ratio.value} onClick={() => setCropRatio(ratio.value)}>{ratio.label}</button>
+                ))}
+              </div>
+              <p className="edit-crop-help">Resize from the lower-right handle. The crop stays inside the photo.</p>
+            </div>
+          ) : <>
+          <div className="edit-adjustment-header">
+            <div className="edit-adjustment-heading">
+              <span className="edit-adjustment-mark"><SparkleIcon size={15} /></span>
+              <div><b>Adjustments</b><small>Live preview · non-destructive</small></div>
+            </div>
+            <div className="edit-adjustment-actions">
+              <button className="edit-auto-button" type="button" onClick={() => { setShowOriginalPreview(false); props.onAuto(); }}><SparkleIcon size={13} /> Auto</button>
+              <button className="edit-reset-button" type="button" onClick={() => { setShowOriginalPreview(false); props.onReset(); }} disabled={!hasAdjustments}>Reset all</button>
+            </div>
           </div>
           {[
-            { key: "exposure" as const, label: "Exposure" },
-            { key: "shadows" as const, label: "Shadows" },
-            { key: "highlights" as const, label: "Highlights" },
-            { key: "contrast" as const, label: "Contrast" },
-            { key: "saturation" as const, label: "Saturation" },
-            { key: "warmth" as const, label: "Warmth" },
-          ].map(({ key, label }) => (
-            <label className="slider-control" key={key}>
-              <span>{label}<b>{values[key] > 0 ? "+" : ""}{values[key]}%</b></span>
-              <input type="range" min={-80} max={80} value={values[key]} onChange={(e) => props.onSetValue(key, Number(e.target.value))} />
-            </label>
+            { title: "Light", controls: [{ key: "exposure" as const, label: "Exposure" }, { key: "shadows" as const, label: "Shadows" }, { key: "highlights" as const, label: "Highlights" }, { key: "contrast" as const, label: "Contrast" }] },
+            { title: "Color", controls: [{ key: "warmth" as const, label: "Warmth" }, { key: "saturation" as const, label: "Saturation" }] },
+          ].map((group) => (
+            <section className="edit-adjustment-group" key={group.title} aria-label={`${group.title} adjustments`}>
+              <h3>{group.title}</h3>
+              {group.controls.map(({ key, label }) => (
+                <div className="slider-control" key={key}>
+                  <span><label htmlFor={`edit-${key}`}>{label}</label><button type="button" className="slider-value-reset" aria-label={`Reset ${label}`} title={`Reset ${label}`} onClick={() => { setShowOriginalPreview(false); props.onSetValue(key, 0); }}>{values[key] > 0 ? "+" : ""}{values[key] || 0}<i>%</i></button></span>
+                  <input id={`edit-${key}`} type="range" min={-80} max={80} value={values[key]} aria-label={label} onChange={(e) => { setShowOriginalPreview(false); props.onSetValue(key, Number(e.target.value)); }} />
+                </div>
+              ))}
+            </section>
           ))}
+          </>}
           <div className="edit-footer">
-            <button className="quiet-button" type="button" onClick={props.onReset}>Reset</button>
             <button className="quiet-button" type="button" onClick={props.onClearDraft}>Discard draft</button>
             <button className="quiet-button" type="button" onClick={props.onSaveDraft}>Save draft</button>
-            <button className="quiet-button" type="button" style={{ color: "#d33" }} onClick={() => setConfirmReplace(true)}>Replace original</button>
+            <button className="quiet-button" type="button" style={{ color: "#d33" }} disabled={!(["jpg", "jpeg", "png", "webp"].includes(String(props.item.extension || props.item.name.split(".").pop() || "").toLowerCase()))} title="Replace original is available for JPEG, PNG, and WebP files" onClick={() => setConfirmReplace(true)}>Replace original</button>
             <button className="primary-button" type="button" onClick={() => props.onExport(false)}>Save copy</button>
           </div>
         </aside>
-      </div>
-      <div className="drafts-row">
-        <h3 style={{ color: "var(--text)" }}>Drafts</h3>
-        <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8 }}>
-          {(props.items||[]).filter((it:any) => { try { return !!localStorage.getItem(`edit:draft:${it.id}`); } catch { return false; } }).map((item:any) => (
-            <button key={item.id} type="button" className="edit-picker-tile" style={{ minWidth: 120, width: 120, position: "relative" }} onClick={() => { props.onSaveDraft?.(); props.onOpenEdit?.(item); }}>
-              <img src={props.assetUrl(item.path)} alt={item.name} style={draftImageStyle(draftTransforms, item.id)} />
-              <span>{item.name}</span>
-              <span className="draft-remove" onClick={(e) => { e.stopPropagation(); clearEditDraft(item.id); props.onNotice?.("Draft removed"); }} title="Remove draft">×</span>
-            </button>
-          ))}
-        </div>
       </div>
       <p className="browser-capability-warning">Browser canvas export supports JPEG, PNG, and WebP input when the browser can decode it. HEIC and RAW need native macOS image frameworks. Metadata is removed from re-encoded exports.</p>
       {confirmReplace && (

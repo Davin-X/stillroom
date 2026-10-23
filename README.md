@@ -20,7 +20,10 @@ Nothing is uploaded. Nothing phones home. Your photos stay on your disk.
 
 ## Features
 
-- **Library grid** — 3 layouts (Grid, Filmstrip, Overview), virtualized
+- **Library views** — Grid, Details, Timeline, Filmstrip, and Overview layouts
+- **Sorting and selection** — sort by name, capture date, modified date, kind, or size; select across timeline groups
+- **Sources manager** — filter folders, inspect indexed item counts, rescan, reveal in Finder, and remove sources without moving files
+- **Inspector** — preview a selected item and edit tags alongside file metadata
 - **Smart filters** — All / Photos / Videos / RAW / Favorites
 - **Search** — by filename, folder path, camera model, tags
 - **Viewer** — arrow-key nav, zoom, full-screen, video playback
@@ -28,22 +31,24 @@ Nothing is uploaded. Nothing phones home. Your photos stay on your disk.
 - **Duplicate detection** — SHA-256 scanner
 - **Batch tools** — rename, export, convert, strip metadata
 - **Slideshow** — timed, looping
-- **Hidden** — hide items from the gallery; files stay on disk at their original paths (not encrypted)
+- **Hidden** — conceal sensitive items and their metadata in the gallery; files stay on disk at their original paths (not encrypted)
 - **Dark / Light / System** appearance
 - **Finder tags** read/write
 
 ## Quick start
 
-### Browser prototype (no Rust needed)
+### Browser preview (no Rust needed)
 
 ```sh
 git clone https://github.com/Davin-X/stillroom.git
 cd stillroom
 npm install
-npm run dev        # http://localhost:1420
+npm run dev        # open http://localhost:1420/harness.html
 npm run build      # dist/
-npm run preview    # serve locally
+npm run preview    # open http://localhost:4173/harness.html
 ```
+
+The browser preview uses a small Tauri API stub for UI review. Native file access, scanning, and Finder actions require the desktop app.
 
 ### Native macOS desktop app
 
@@ -64,30 +69,28 @@ stillroom/
 ├── src/              # React/Vite frontend
 ├── src-tauri/        # Tauri 2 + Rust backend
 ├── index.html
+├── harness.html     # Browser preview with a Tauri API stub
+├── LICENSE
 ├── package.json
 ├── tsconfig.json
 ├── vite.config.js
 └── README.md
 ```
 
-## Roadmap
+## Current limitations
 
-| Phase | Focus | Target |
-|-------|-------|--------|
-| 1 — Foundation | SQLite catalog, folder scanning, EXIF read/write, Tauri bridge | v0.2 |
-| 2 — Core Gallery | Virtualized grid (10k+ items), albums/tags, keyboard nav, theme sync | v0.3 |
-| 3 — Viewer & Edit | Image viewer, video playback, Core Image edits, RAW preview, export | v0.4 |
-| 4 — Advanced | Batch export, duplicate scanner, folder watching, Finder tags, Trash | v0.5 |
-| 5 — Polish | Menu bar, Dock menu, notarization | v1.0 |
+- The browser preview does not have native file-system access; use the Tauri desktop app to index folders.
+- Hidden items are visually concealed in the app but are not encrypted and remain accessible at their original file paths.
+- Folder watching, network access, and crash reporting are not available yet.
 
-See [`DESIGN_ANALYSIS.md`](./DESIGN_ANALYSIS.md) and [`DESIGN_IMPROVEMENTS.md`](./DESIGN_IMPROVEMENTS.md).
+See [`CHANGELOG.md`](./CHANGELOG.md) for release notes and [`CONTRIBUTING.md`](./CONTRIBUTING.md) for development guidance.
 
 ## Contributing
 
 Stillroom uses **pull requests only** — `main` is protected and requires at least one approving review.
 
 1. Fork, create branch: `git checkout -b feature/your-feature`
-2. Run `npx tsc --noEmit` to verify
+2. Run `npm run typecheck` to verify
 3. Commit: `feat:`, `fix:`, `chore:`, `docs:`
 4. Open a PR against `main`
 

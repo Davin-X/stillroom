@@ -1,9 +1,6 @@
-import React from "react";
-import { useSettingsStore, useAppearance, useAccentColor, useSidebarWidth, useDefaultLayout, useLibraryStore, useSystemDark, ACCENT_PALETTE } from "../../../engine/stores";
-import { tauri } from "../../../engine/commands/tauri";
+import { FolderIcon, InfoIcon } from "../icons";
 import type { LibraryFolder } from "../../../engine/types/commands";
 import { SourcesManager } from "../SourcesManager";
-import { LockIcon, GearIcon, EyeIcon, FolderIcon, ShieldIcon, CpuIcon, TrashIcon, RotateCcwIcon, DownloadIcon, InfoIcon } from "../icons";
 
 export function LibraryPanel(props: {
   autoImport: boolean;
@@ -29,6 +26,7 @@ export function LibraryPanel(props: {
             <label className="toggle-switch">
               <input
                 type="checkbox"
+                aria-label="Auto-import new files"
                 checked={props.autoImport}
                 onChange={(e) => props.onChange("autoImport", e.target.checked)}
               />
@@ -45,6 +43,7 @@ export function LibraryPanel(props: {
             <label className="toggle-switch">
               <input
                 type="checkbox"
+                aria-label="Pair RAW and JPEG files"
                 checked={props.pairRawJpeg}
                 onChange={(e) => props.onChange("pairRawJpeg", e.target.checked)}
               />
@@ -61,6 +60,7 @@ export function LibraryPanel(props: {
             <label className="toggle-switch">
               <input
                 type="checkbox"
+                aria-label="Stack burst photos"
                 checked={props.stackBursts}
                 onChange={(e) => props.onChange("stackBursts", e.target.checked)}
               />

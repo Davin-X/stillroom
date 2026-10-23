@@ -28,6 +28,8 @@ interface LibraryState {
   hiddenFilter: Filter;
   hiddenQuery: string;
   layout: LayoutMode;
+  sortBy: "capturedAt" | "modifiedAt" | "name" | "size" | "kind";
+  sortOrder: "asc" | "desc";
   showInspector: boolean;
   sidebarOpen: boolean;
   activeAlbum: string | null;
@@ -84,6 +86,7 @@ interface LibraryState {
   setQuery: (query: string) => void;
   setHiddenQuery: (query: string) => void;
   setLayout: (layout: LayoutMode) => void;
+  setSort: (sortBy: LibraryState["sortBy"], sortOrder: LibraryState["sortOrder"]) => void;
   setScreen: (screen: Screen) => void;
   setViewerScope: (scope: "library" | "hidden") => void;
   toggleInspector: () => void;
@@ -116,14 +119,34 @@ interface LibraryState {
 }
 
 function computeDerived(state: LibraryState) {
-  const { items, filter, query, activeAlbum, activeSource, inspectedId, viewerScope } = state;
+  const { items, filter, query, activeAlbum, activeSource, inspectedId, viewerScope, sortBy, sortOrder } = state;
 
   // One sort for every derived collection. Hidden items are a separate,
   // first-class set: they never appear in the normal grid, viewer, album
   // covers, or counts.
-  const sorted = [...items].sort(
-    (a, b) => (b.capturedAt || b.modifiedAt) - (a.capturedAt || a.modifiedAt),
-  );
+  const sorted = [...items].sort((a, b) => {
+    let comparison = 0;
+    switch (sortBy) {
+      case "name":
+        comparison = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+        break;
+      case "size":
+        comparison = a.size - b.size;
+        break;
+      case "kind":
+        comparison = a.kind.localeCompare(b.kind);
+        break;
+      case "modifiedAt":
+        comparison = a.modifiedAt - b.modifiedAt;
+        break;
+      case "capturedAt":
+      default:
+        comparison = (a.capturedAt ?? a.modifiedAt) - (b.capturedAt ?? b.modifiedAt);
+        break;
+    }
+    if (comparison === 0) comparison = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+    return sortOrder === "asc" ? comparison : -comparison;
+  });
   const hiddenItems = sorted.filter((item) => item.hidden);
   let visible = sorted.filter((item) => !item.hidden);
 
@@ -197,6 +220,8 @@ export const useLibraryStore = create<LibraryState>()(
       hiddenFilter: "All",
       hiddenQuery: "",
       layout: "grid",
+      sortBy: "capturedAt",
+      sortOrder: "desc",
       showInspector: true,
       sidebarOpen: true,
       activeAlbum: null,
@@ -427,6 +452,11 @@ export const useLibraryStore = create<LibraryState>()(
       setHiddenQuery: (hiddenQuery) => set({ hiddenQuery }),
 
       setLayout: (layout) => set({ layout }),
+
+      setSort: (sortBy, sortOrder) => {
+        set({ sortBy, sortOrder });
+        get().refreshDerived();
+      },
 
       setScreen: (screen) => set({ screen }),
 

@@ -13,6 +13,12 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
     target: "safari14",
+    rollupOptions: {
+      input: {
+        main: "index.html",
+        harness: "harness.html",
+      },
+    },
   },
   resolve: {
     alias: {

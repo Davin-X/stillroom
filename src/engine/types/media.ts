@@ -124,7 +124,7 @@ export interface RenderRequest {
 }
 
 export type Filter = "All" | "Photos" | "Videos" | "RAW" | "Favorites";
-export type LayoutMode = "grid" | "filmstrip" | "overview";
+export type LayoutMode = "grid" | "filmstrip" | "overview" | "details" | "timeline";
 export type Screen = "Library" | "Viewer" | "Explore" | "Duplicates" | "Edit" | "Batch" | "Hidden" | "Slideshow" | "Settings";
 
 export interface LibraryFilter {

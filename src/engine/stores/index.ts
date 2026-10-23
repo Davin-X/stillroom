@@ -1,4 +1,4 @@
-export { useSettingsStore, useAppearance, useAccentColor, useSidebarWidth, useDefaultLayout, useSystemDark, applyTheme, ACCENT_PALETTE } from "./useSettingsStore";
+export { useSettingsStore, useAppearance, useAccentColor, useSidebarWidth, useDefaultLayout, useThumbnailSize, useSystemDark, applyTheme, ACCENT_PALETTE } from "./useSettingsStore";
 export { useLibraryStore, useVisibleItems, useSelectedItem, useInspectedItem, useSelectedItems, useSelectionCount, useFilter, useQuery, useLayout, useShowInspector, useActiveAlbum, useAlbums, useDuplicates, useBusy, useProgress, useNotice } from "./useLibraryStore";
 export { useViewerStore, useViewerOpen, useViewerZoom, useViewerFitMode } from "./useViewerStore";
 export { useEditStore, useEditItem, useEditValues, useEditCrop, useEditHistory, useDraftTransforms, draftTransformStyle, clearEditDraft, type DraftTransform } from "./useEditStore";

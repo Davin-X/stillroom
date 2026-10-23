@@ -12,7 +12,7 @@ export interface AppSettings {
   restoreWindowState: boolean;
 
   // Viewing
-  defaultLayout: "grid" | "filmstrip" | "overview";
+  defaultLayout: "grid" | "details" | "timeline";
   thumbnailSize: "small" | "medium" | "large";
   viewerZoomBehavior: "fit" | "actual" | "last";
   slideshowInterval: number;
@@ -27,12 +27,6 @@ export interface AppSettings {
   pairRawJpeg: boolean;
   stackBursts: boolean;
   stackLivePhotos: boolean;
-
-  // Privacy & Security
-  stripGpsOnExport: boolean;
-  stripAllMetadataOnExport: boolean;
-  allowNetworkRequests: boolean;
-  sendCrashReports: boolean;
 
   // Advanced
   maxCacheSizeGB: number;
@@ -51,7 +45,7 @@ export const defaultSettings: AppSettings = {
   openLastFolder: true,
   restoreWindowState: true,
   defaultLayout: "grid",
-  thumbnailSize: "medium",
+  thumbnailSize: "small",
   viewerZoomBehavior: "fit",
   slideshowInterval: 5,
   slideshowShuffle: false,
@@ -63,10 +57,6 @@ export const defaultSettings: AppSettings = {
   pairRawJpeg: true,
   stackBursts: true,
   stackLivePhotos: true,
-  stripGpsOnExport: true,
-  stripAllMetadataOnExport: false,
-  allowNetworkRequests: false,
-  sendCrashReports: false,
   maxCacheSizeGB: 5,
   thumbnailQuality: 80,
   enableDebugLogging: false,

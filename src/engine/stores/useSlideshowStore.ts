@@ -11,9 +11,11 @@ interface SlideshowState {
   isOpen: boolean;
   items: MediaItem[];
   index: number;
+  playedCount: number;
   playing: boolean;
   interval: number; // seconds
   shuffle: boolean;
+  loop: boolean;
   transition: SlideshowTransition;
 
   open: (items: MediaItem[], startId?: string | null) => void;
@@ -23,6 +25,7 @@ interface SlideshowState {
   toggle: () => void;
   setInterval: (seconds: number) => void;
   setShuffle: (shuffle: boolean) => void;
+  setLoop: (loop: boolean) => void;
   setTransition: (transition: SlideshowTransition) => void;
 }
 
@@ -54,33 +57,40 @@ export const useSlideshowStore = create<SlideshowState>()(
       isOpen: false,
       items: [],
       index: 0,
+      playedCount: 0,
       playing: false,
       interval: 5,
       shuffle: false,
+      loop: true,
       transition: "fade",
 
       open: (items, startId) => {
         if (items.length === 0) return;
         const start = startId ? items.findIndex((item) => item.id === startId) : -1;
-        set({ isOpen: true, items, index: start >= 0 ? start : 0, playing: true });
+        set({ isOpen: true, items, index: start >= 0 ? start : 0, playedCount: 1, playing: true });
         schedule();
       },
 
       close: () => {
         clearTimer();
-        set({ isOpen: false, items: [], index: 0, playing: false });
+        set({ isOpen: false, items: [], index: 0, playedCount: 0, playing: false });
       },
 
       next: () => {
-        const { items, index, shuffle } = get();
+        const { items, index, shuffle, loop, playedCount } = get();
         if (items.length < 2) return;
+        if (!loop && playedCount >= items.length) {
+          set({ playing: false });
+          clearTimer();
+          return;
+        }
         let nextIndex = index;
         if (shuffle) {
           while (nextIndex === index) nextIndex = Math.floor(Math.random() * items.length);
         } else {
           nextIndex = (index + 1) % items.length;
         }
-        set({ index: nextIndex });
+        set({ index: nextIndex, playedCount: playedCount + 1 });
       },
 
       previous: () => {
@@ -102,6 +112,7 @@ export const useSlideshowStore = create<SlideshowState>()(
       },
 
       setShuffle: (shuffle) => set({ shuffle }),
+      setLoop: (loop) => set({ loop }),
       setTransition: (transition) => set({ transition }),
     }),
     { name: "slideshow-store" }

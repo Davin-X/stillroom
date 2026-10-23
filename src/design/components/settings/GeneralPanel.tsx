@@ -1,9 +1,5 @@
-import React from "react";
-import { useSettingsStore, useAppearance, useAccentColor, useSidebarWidth, useDefaultLayout, useLibraryStore, useSystemDark, ACCENT_PALETTE } from "../../../engine/stores";
-import { tauri } from "../../../engine/commands/tauri";
-import type { LibraryFolder } from "../../../engine/types/commands";
-import { SourcesManager } from "../SourcesManager";
-import { LockIcon, GearIcon, EyeIcon, FolderIcon, ShieldIcon, CpuIcon, TrashIcon, RotateCcwIcon, DownloadIcon, InfoIcon } from "../icons";
+import type { CSSProperties } from "react";
+import { GearIcon } from "../icons";
 
 export function GeneralPanel(props: {
   appearance: string;
@@ -54,6 +50,7 @@ export function GeneralPanel(props: {
             <input
               type="range"
               className="settings-slider"
+              style={{ "--slider-progress": `${((props.sidebarWidth - 180) / 180) * 100}%` } as CSSProperties}
               min={180}
               max={360}
               step={4}
@@ -72,6 +69,7 @@ export function GeneralPanel(props: {
             <label className="toggle-switch">
               <input
                 type="checkbox"
+                aria-label="Show file extensions"
                 checked={props.showExtensions}
                 onChange={(e) => props.onChange("showExtensions", e.target.checked)}
               />
@@ -88,6 +86,7 @@ export function GeneralPanel(props: {
             <label className="toggle-switch">
               <input
                 type="checkbox"
+                aria-label="Animate transitions"
                 checked={props.animateTransitions}
                 onChange={(e) => props.onChange("animateTransitions", e.target.checked)}
               />
@@ -108,6 +107,7 @@ export function GeneralPanel(props: {
           <div className="settings-row-control">
             <select
               className="settings-select"
+              aria-label="Open on launch"
               value={props.startupView}
               onChange={(e) => props.onChange("startupView", e.target.value)}
             >
@@ -124,6 +124,7 @@ export function GeneralPanel(props: {
             <label className="toggle-switch">
               <input
                 type="checkbox"
+                aria-label="Open last library folder"
                 checked={props.openLastFolder}
                 onChange={(e) => props.onChange("openLastFolder", e.target.checked)}
               />
@@ -140,6 +141,7 @@ export function GeneralPanel(props: {
             <label className="toggle-switch">
               <input
                 type="checkbox"
+                aria-label="Restore window state"
                 checked={props.restoreWindow}
                 onChange={(e) => props.onChange("restoreWindowState", e.target.checked)}
               />

@@ -2,13 +2,12 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useSettingsStore, useAppearance, useAccentColor, useSidebarWidth, useDefaultLayout, useLibraryStore, useSystemDark, ACCENT_PALETTE } from "../../engine/stores";
 import { tauri } from "../../engine/commands/tauri";
 import type { LibraryFolder } from "../../engine/types/commands";
-import { SourcesManager } from "./SourcesManager";
 import { GeneralPanel } from "./settings/GeneralPanel";
 import { ViewingPanel } from "./settings/ViewingPanel";
 import { LibraryPanel } from "./settings/LibraryPanel";
 import { PrivacyPanel } from "./settings/PrivacyPanel";
 import { AdvancedPanel } from "./settings/AdvancedPanel";
-import { LockIcon, GearIcon, EyeIcon, FolderIcon, ShieldIcon, CpuIcon, TrashIcon, RotateCcwIcon, DownloadIcon, InfoIcon } from "./icons";
+import { GearIcon, EyeIcon, FolderIcon, ShieldIcon, CpuIcon } from "./icons";
 
 type SettingsTab = "general" | "viewing" | "library" | "privacy" | "advanced";
 
@@ -16,8 +15,8 @@ const TABS: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
   { id: "general", label: "General", icon: <GearIcon size={15} /> },
   { id: "viewing", label: "Viewing", icon: <EyeIcon size={15} /> },
   { id: "library", label: "Library", icon: <FolderIcon size={15} /> },
-  { id: "privacy", label: "Privacy & Security", icon: <ShieldIcon size={15} /> },
   { id: "advanced", label: "Advanced", icon: <CpuIcon size={15} /> },
+  { id: "privacy", label: "Privacy", icon: <ShieldIcon size={15} /> },
 ];
 
 export function SettingsScreen(props: {
@@ -41,8 +40,6 @@ export function SettingsScreen(props: {
   const systemDark = useSystemDark();
   const isDark = appearance === "dark" || (appearance === "system" && systemDark);
   const defaultLayout = useDefaultLayout();
-  const stripGps = useSettingsStore((s) => s.stripGpsOnExport);
-  const stripAllMeta = useSettingsStore((s) => s.stripAllMetadataOnExport);
   const autoImport = useSettingsStore((s) => s.autoImport);
   const pairRawJpeg = useSettingsStore((s) => s.pairRawJpeg);
   const stackBursts = useSettingsStore((s) => s.stackBursts);
@@ -208,7 +205,7 @@ export function SettingsScreen(props: {
             ref={(el) => { tabRefs.current[index] = el; }}
             role="tab"
             aria-selected={activeTab === tab.id}
-            aria-controls={`panel-${tab.id}`}
+            aria-controls={activeTab === tab.id ? `panel-${tab.id}` : undefined}
             id={`tab-${tab.id}`}
             tabIndex={activeTab === tab.id ? 0 : -1}
             className={`settings-tab ${activeTab === tab.id ? "active" : ""}`}
@@ -257,23 +254,15 @@ export function SettingsScreen(props: {
           onRescan={props.onRescan}
           onChange={update}
         />}
-        {activeTab === "privacy" && <PrivacyPanel
-          stripGps={stripGps}
-          stripAllMeta={stripAllMeta}
-          onChange={update}
-        />}
+        {activeTab === "privacy" && <PrivacyPanel />}
         {activeTab === "advanced" && <AdvancedPanel
           maxCacheSize={maxCacheSize}
           thumbnailQuality={thumbnailQuality}
           debugLogging={debugLogging}
           showNativeWarnings={showNativeWarnings}
           onChange={update}
-          showResetConfirm={showResetConfirm}
           setShowResetConfirm={setShowResetConfirm}
-          showDeleteConfirm={showDeleteConfirm}
           setShowDeleteConfirm={setShowDeleteConfirm}
-          onConfirmReset={handleResetSettings}
-          onConfirmDelete={handleDeleteLibrary}
           deleting={deletingLibrary}
           onRebuild={handleRebuildLibrary}
           rebuilding={rebuilding}

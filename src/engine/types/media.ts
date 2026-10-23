@@ -54,7 +54,13 @@ export interface ImportSession {
 }
 
 export interface BatchExportRequest {
-  items: { id: string; sourcePath: string; index: number }[];
+  items: {
+    id: string;
+    sourcePath: string;
+    index: number;
+    kind?: MediaKind;
+    date?: number;
+  }[];
   outputFolder: string;
   pattern: string;
   format: "jpeg" | "png" | "webp" | "heic" | "avif" | "source";
@@ -67,6 +73,7 @@ export interface BatchExportResult {
   exported: number;
   failed: Array<{ itemId: string; error: string }>;
   outputs: string[];
+  cancelled?: boolean;
 }
 
 export interface EditValues {

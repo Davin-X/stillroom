@@ -158,6 +158,7 @@ pub fn run() {
             update_item_tags,
             move_to_trash,
             reveal_in_finder,
+            open_folder,
             // Albums
             create_album,
             delete_album,
@@ -171,6 +172,7 @@ pub fn run() {
             render_edited,
             // Batch
             batch_export,
+            cancel_batch_export,
             // Duplicates
             find_duplicates,
             compute_hash,

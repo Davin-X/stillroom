@@ -220,8 +220,34 @@ body {
 
 .sidebar-footer {
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 16px 14px 15px;
   border-top: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.sidebar-health {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+
+.health-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  flex: 0 0 auto;
+}
+
+.sidebar-version {
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
 }
 
 .main-content {

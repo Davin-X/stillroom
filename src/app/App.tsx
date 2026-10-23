@@ -1163,7 +1163,6 @@ handlersRef.current = { importFolder, importFiles, showNotice };
                 </span>
               </span>
               <span className="sources-entry-action">
-                <span className="sources-entry-manage">Manage</span>
                 <span className="sources-entry-chevron" aria-hidden="true">›</span>
               </span>
             </button>

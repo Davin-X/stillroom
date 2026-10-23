@@ -5147,7 +5147,7 @@ body {
 
 .batch-switch > span {
   position: absolute;
-  top: 2px;
+  top: 50%;
   left: 2px;
   width: 15px;
   height: 15px;
@@ -5155,6 +5155,7 @@ body {
   background: var(--surface);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
   transition: transform 0.16s ease;
+  transform: translateY(-50%);
 }
 
 .batch-toggle > input:checked + .batch-switch {
@@ -5162,7 +5163,7 @@ body {
 }
 
 .batch-toggle > input:checked + .batch-switch > span {
-  transform: translateX(13px);
+  transform: translate(13px, -50%);
 }
 
 .batch-toggle > input:focus-visible + .batch-switch {

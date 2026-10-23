@@ -4232,6 +4232,39 @@ body {
     margin-bottom: 8px;
   }
 
+  /* In a narrow center pane, give the collection controls their own row and
+     allow the control groups to wrap. Keeping Album first prevents it from
+     being pushed underneath the clipped left edge of the toolbar. */
+  .library-layout.with-inspector .library-header .toolbar-right {
+    flex: 1 1 100%;
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .library-layout.with-inspector .library-header .toolbar-actions {
+    flex: 1 1 300px;
+    min-width: 0;
+    max-width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    row-gap: 6px;
+  }
+
+  .library-layout.with-inspector .library-header .toolbar-actions > .toolbar-button,
+  .library-layout.with-inspector .library-header .toolbar-actions > .layout-switcher,
+  .library-layout.with-inspector .library-header .toolbar-actions > .zoom-control,
+  .library-layout.with-inspector .library-header .toolbar-actions > .sort-control {
+    flex: 0 0 auto;
+  }
+
+  .library-layout.with-inspector .library-header .toolbar-divider {
+    display: none;
+  }
+
+  .library-layout.with-inspector .library-header .selection-cluster {
+    margin-left: 0;
+  }
+
   .library-layout.with-inspector .library-header .search-field {
     max-width: none;
     height: 34px;

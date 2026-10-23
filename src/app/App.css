@@ -4186,7 +4186,7 @@ body {
   }
 
   .library-layout.with-inspector .library-header {
-    padding: 0 16px;
+    padding: 16px 16px 12px;
   }
 
   .library-layout.with-inspector .library-grid-container {

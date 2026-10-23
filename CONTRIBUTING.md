@@ -1,6 +1,6 @@
 # Contributing to Stillroom
 
-Thank you for contributing! Stillroom is a local-first macOS photo gallery built with React, TypeScript, Vite, and Tauri 2 (Rust). All changes go through **pull requests** — `main` is protected and requires at least one approving review.
+Thank you for contributing! Stillroom is a local-first macOS photo gallery built with React, TypeScript, Vite, and Tauri 2 (Rust). Contributions are reviewed through pull requests. Check the repository's current branch rules for review and merge requirements.
 
 ---
 
@@ -8,8 +8,7 @@ Thank you for contributing! Stillroom is a local-first macOS photo gallery built
 
 - **Branching:** Create a feature branch from `main` (`git checkout -b feature/your-feature`)
 - **Commits:** Use [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`)
-- **Review:** Open a PR against `main`. At least one approving review is required before merge.
-- **Protection:** `main` blocks force-pushes and deletions; conversations must be resolved.
+- **Review:** Open a PR against `main` and follow the review requirements shown by GitHub.
 
 ---
 
@@ -24,7 +23,7 @@ cd stillroom
 npm install
 
 # Run the browser prototype
-npm run dev           # http://localhost:1420
+npm run dev           # open http://localhost:1420/harness.html
 npm run build         # production Vite build
 
 # Run the native desktop app (requires Rust toolchain)
@@ -32,7 +31,7 @@ npm run tauri dev
 npm run tauri build
 
 # Type-check
-npx tsc --noEmit
+npm run typecheck
 ```
 
 ### Rust toolchain (for native backend)

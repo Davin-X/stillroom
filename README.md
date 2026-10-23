@@ -26,11 +26,11 @@ Nothing is uploaded. Nothing phones home. Your photos stay on your disk.
 - **Inspector** — preview a selected item and edit tags alongside file metadata
 - **Smart filters** — All / Photos / Videos / RAW / Favorites
 - **Search** — by filename, folder path, camera model, tags
-- **Viewer** — arrow-key nav, zoom, full-screen, video playback
+- **Viewer** — keyboard navigation, zoom, full-screen, video playback, and a thumbnail filmstrip
 - **Non-destructive edits** — exposure, contrast, warmth, rotation, flip; export JPEG/PNG/HEIC/AVIF
 - **Duplicate detection** — SHA-256 scanner
 - **Batch tools** — rename, export, convert, strip metadata
-- **Slideshow** — timed, looping
+- **Slideshow** — configurable photo interval, shuffle and transitions; videos advance when playback ends
 - **Hidden** — conceal sensitive items and their metadata in the gallery; files stay on disk at their original paths (not encrypted)
 - **Dark / Light / System** appearance
 - **Finder tags** read/write
@@ -68,6 +68,8 @@ npm run tauri build   # .app bundle (macOS)
 stillroom/
 ├── src/              # React/Vite frontend
 ├── src-tauri/        # Tauri 2 + Rust backend
+│   └── icons/        # App icons used by Tauri bundles
+├── scripts/          # Maintainer utilities
 ├── index.html
 ├── harness.html     # Browser preview with a Tauri API stub
 ├── LICENSE
@@ -87,7 +89,7 @@ See [`CHANGELOG.md`](./CHANGELOG.md) for release notes and [`CONTRIBUTING.md`](.
 
 ## Contributing
 
-Stillroom uses **pull requests only** — `main` is protected and requires at least one approving review.
+Contributions are reviewed through pull requests. Check the repository's current branch rules before opening one.
 
 1. Fork, create branch: `git checkout -b feature/your-feature`
 2. Run `npm run typecheck` to verify

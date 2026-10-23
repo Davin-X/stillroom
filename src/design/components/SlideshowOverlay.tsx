@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSlideshowStore, useDraftTransforms, draftTransformStyle, type SlideshowTransition } from "../../engine/stores";
-import { useSettingsStore } from "../../engine/stores/useSettingsStore";
 import { GearIcon, PauseIcon, PlayIcon, StopIcon } from "./icons";
 
 interface SlideshowOverlayProps {
@@ -11,8 +10,6 @@ interface SlideshowOverlayProps {
 // launched it, owns its own item list, and leaves the library selection and
 // inspection state untouched when it closes.
 export function SlideshowOverlay({ assetUrl }: SlideshowOverlayProps) {
-  const videoAutoPlay = useSettingsStore((s) => s.videoAutoPlay);
-  const videoLoop = useSettingsStore((s) => s.videoLoop);
   const isOpen = useSlideshowStore((s) => s.isOpen);
   const draftTransforms = useDraftTransforms();
   const items = useSlideshowStore((s) => s.items);
@@ -21,6 +18,7 @@ export function SlideshowOverlay({ assetUrl }: SlideshowOverlayProps) {
   const interval = useSlideshowStore((s) => s.interval);
   const shuffle = useSlideshowStore((s) => s.shuffle);
   const transition = useSlideshowStore((s) => s.transition);
+  const item = items[index];
   const close = useSlideshowStore((s) => s.close);
   const next = useSlideshowStore((s) => s.next);
   const previous = useSlideshowStore((s) => s.previous);
@@ -32,6 +30,7 @@ export function SlideshowOverlay({ assetUrl }: SlideshowOverlayProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [hudVisible, setHudVisible] = useState(true);
   const hideTimer = useRef<number | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   // Controls fade out while the slideshow plays and come back on movement.
   const poke = useCallback(() => {
@@ -75,17 +74,27 @@ export function SlideshowOverlay({ assetUrl }: SlideshowOverlayProps) {
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [isOpen, close, next, previous, toggle]);
 
+  // The slideshow's play/pause state owns its video too. Videos advance on
+  // `ended`, while still images use the configured interval timer.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || item?.kind !== "video") return;
+    if (playing) void video.play().catch(() => {});
+    else video.pause();
+  }, [item?.id, item?.kind, playing]);
+
   // Reset the settings popover when the session ends.
   useEffect(() => {
     if (!isOpen) setSettingsOpen(false);
   }, [isOpen]);
 
   if (!isOpen) return null;
-  const item = items[index];
   if (!item) return null;
 
   const hudShown = hudVisible || !playing || settingsOpen;
   const position = `${(index + 1).toLocaleString()} / ${items.length.toLocaleString()}`;
+  const draftTransform = draftTransforms.get(item.id);
+  const rotated = Boolean(draftTransform && draftTransform.rotation % 180 !== 0);
 
   return (
     <div
@@ -98,9 +107,25 @@ export function SlideshowOverlay({ assetUrl }: SlideshowOverlayProps) {
     >
       <div className="slideshow-media" key={item.id} onClick={toggle} title={playing ? "Pause" : "Play"}>
         {item.kind === "video" ? (
-          <video src={assetUrl(item.path)} autoPlay={videoAutoPlay} loop={videoLoop} playsInline />
+          <video
+            ref={videoRef}
+            src={assetUrl(item.path)}
+            autoPlay={playing}
+            loop={false}
+            playsInline
+            onEnded={() => (items.length > 1 ? next() : toggle())}
+          />
         ) : (
-          <img src={assetUrl(item.path)} alt={item.name} style={{ transform: draftTransformStyle(draftTransforms.get(item.id)) }} />
+          <img
+            src={assetUrl(item.path)}
+            alt={item.name}
+            decoding="async"
+            style={{
+              maxWidth: rotated ? "min(100%, 100cqh)" : undefined,
+              maxHeight: rotated ? "min(100%, 100cqw)" : undefined,
+              transform: draftTransformStyle(draftTransform),
+            }}
+          />
         )}
       </div>
 

@@ -169,7 +169,7 @@ kbd { padding: 2px 4px; border: 1px solid var(--line-strong); border-radius: 4px
 .format-hint b { color: var(--text); font-size:12px; }
 .format-hint small { color: var(--faint); font-size:13px; }
 .album-nav button.active { background: var(--blue-soft); color: var(--accent-text); }
-.hidden-disclaimer { display: flex; align-items: flex-start; gap: 8px; margin: 12px 0 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); color: var(--muted); font-size: 12px; line-height: 1.5; }
+.hidden-disclaimer { display: flex; align-items: flex-start; gap: 8px; margin: 12px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); color: var(--muted); font-size: 12px; line-height: 1.5; }
 .hidden-disclaimer svg { margin-top: 1px; color: var(--faint); }
 
 

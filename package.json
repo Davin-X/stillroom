@@ -26,15 +26,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:web": "vite",
     "build": "vite build",
-    "build:web": "vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "typecheck": "tsc --noEmit",
-    "lint": "eslint src --ext .ts,.tsx"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

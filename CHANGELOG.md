@@ -21,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Refreshed the app and in-app brand marks; added native macOS and Windows icon bundle assets
 - Reduced idle work during window resizing and removed automatic periodic source scans
 - Reduced edit-picker work for large libraries by avoiding per-photo draft reads and loading thumbnails lazily
+- Library tiles now load cached 512 px thumbnails (1024 px in Overview, 128 px in Details) instead of full-resolution originals
 - Avoided re-reading unchanged media during regular scans; explicit rebuilds still inspect every file
 - Limited duplicate hashing to one file at a time to reduce disk contention on large libraries
 

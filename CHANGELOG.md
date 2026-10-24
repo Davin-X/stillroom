@@ -22,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Reduced idle work during window resizing and removed automatic periodic source scans
 - Reduced edit-picker work for large libraries by avoiding per-photo draft reads and loading thumbnails lazily
 - Library tiles now load cached 512 px thumbnails (1024 px in Overview, 128 px in Details) instead of full-resolution originals
+- Scans now prune catalog rows for files that disappeared from disk since the last scan
 - Avoided re-reading unchanged media during regular scans; explicit rebuilds still inspect every file
 - Limited duplicate hashing to one file at a time to reduce disk contention on large libraries
 

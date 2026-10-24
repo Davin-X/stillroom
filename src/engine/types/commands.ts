@@ -7,6 +7,7 @@ import type { AppSettings } from "./settings";
 export interface ScanResult {
   items: MediaItem[];
   discoveredCount: number;
+  removedCount: number;
   cancelled: boolean;
   albums: Album[];
   tags: Tag[];

@@ -31,6 +31,8 @@ use walkdir::WalkDir;
 pub struct ScanResult {
     pub items: Vec<MediaItem>,
     pub discovered_count: usize,
+    /// Rows removed because their files no longer exist under the scanned root.
+    pub removed_count: usize,
     pub cancelled: bool,
     pub albums: Vec<Album>,
     pub tags: Vec<Tag>,
@@ -470,6 +472,73 @@ async fn upsert_media_batch(
     Ok(())
 }
 
+/// Remove catalog rows whose files disappeared from a source that was just
+/// walked successfully.
+///
+/// This is deliberately conservative: the caller only invokes it after a
+/// complete, uncancelled walk with no directory errors. A disconnected drive or
+/// an unreadable subfolder must never wipe the catalog.
+async fn prune_missing_items(
+    db: &SqlitePool,
+    root: &str,
+    seen_paths: &HashSet<String>,
+) -> Result<usize, String> {
+    let candidates: Vec<(String, String)> =
+        sqlx::query_as("SELECT id, path FROM media_items")
+            .fetch_all(db)
+            .await
+            .map_err(|error| error.to_string())?;
+
+    let missing: Vec<String> = candidates
+        .into_iter()
+        .filter(|(_, path)| path_is_inside(path, root) && !seen_paths.contains(path))
+        .map(|(id, _)| id)
+        .collect();
+    if missing.is_empty() {
+        return Ok(0);
+    }
+
+    // Stay below SQLite's bound-parameter limit and delete every relation in
+    // one transaction so a partial prune cannot leave orphaned album/tag rows.
+    const DELETE_CHUNK: usize = 500;
+    let mut transaction = db.begin().await.map_err(|error| error.to_string())?;
+    for chunk in missing.chunks(DELETE_CHUNK) {
+        for table in ["media_tags", "album_items"] {
+            let mut query = QueryBuilder::<Sqlite>::new(format!(
+                "DELETE FROM {table} WHERE media_id IN ("
+            ));
+            let mut values = query.separated(", ");
+            for id in chunk {
+                values.push_bind(id);
+            }
+            values.push_unseparated(")");
+            query
+                .build()
+                .execute(&mut *transaction)
+                .await
+                .map_err(|error| error.to_string())?;
+        }
+
+        let mut query = QueryBuilder::<Sqlite>::new("DELETE FROM media_items WHERE id IN (");
+        let mut values = query.separated(", ");
+        for id in chunk {
+            values.push_bind(id);
+        }
+        values.push_unseparated(")");
+        query
+            .build()
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| error.to_string())?;
+    }
+    transaction
+        .commit()
+        .await
+        .map_err(|error| error.to_string())?;
+
+    Ok(missing.len())
+}
+
 async fn import_media_file(
     db: &SqlitePool,
     path: &Path,
@@ -503,6 +572,9 @@ pub async fn scan_library(
     let mut items = Vec::new();
     let mut total_size: i64 = 0;
     let mut processed: u64 = 0;
+    // Every media path found by this walk. Used to prune rows for files that
+    // were deleted while the app was closed.
+    let mut seen_paths: HashSet<String> = HashSet::new();
 
     // Get database connection
     let db = get_db(&state)?;
@@ -550,6 +622,10 @@ pub async fn scan_library(
                 }
             }
         }
+    }
+    let had_walk_error = walk_error.is_some();
+    for p in &media_paths {
+        seen_paths.insert(p.to_string_lossy().into_owned());
     }
     if media_paths.is_empty() && !SCAN_CANCEL.load(Ordering::SeqCst) {
         if let Some(error) = walk_error {
@@ -631,6 +707,15 @@ pub async fn scan_library(
 
     hydrate_relations(&db, &mut items).await?;
 
+    // Prune catalog entries for files that disappeared from this source.
+    // Only do this if the walk completed fully without errors.
+    let cancelled = SCAN_CANCEL.load(Ordering::SeqCst);
+    let removed_count = if !cancelled && !had_walk_error {
+        prune_missing_items(&db, &root_path, &seen_paths).await?
+    } else {
+        0
+    };
+
     // Hand back the albums and tags so the sidebar is populated from the same
     // call that imports, instead of staying empty until a separate round-trip.
     let albums = sqlx::query_as::<_, Album>(&format!("{} ORDER BY a.created_at ASC", ALBUM_SELECT))
@@ -645,7 +730,8 @@ pub async fn scan_library(
     Ok(ScanResult {
         items,
         discovered_count,
-        cancelled: SCAN_CANCEL.load(Ordering::SeqCst),
+        removed_count,
+        cancelled,
         albums,
         tags,
         sessions: vec![],
@@ -761,6 +847,7 @@ pub async fn import_files(
     Ok(ScanResult {
         items,
         discovered_count,
+        removed_count: 0,
         cancelled: SCAN_CANCEL.load(Ordering::SeqCst),
         albums,
         tags,
@@ -2346,7 +2433,8 @@ pub async fn save_file(path: String, bytes: Vec<u8>) -> Result<(), String> {
 
 #[cfg(test)]
 mod thumbnail_cache_tests {
-    use super::{prune_thumbnail_cache, thumbnail_cache_key};
+    use super::{prune_missing_items, prune_thumbnail_cache, thumbnail_cache_key, upsert_media_batch, MediaItem};
+    use std::collections::HashSet;
     use std::fs;
     use uuid::Uuid;
 
@@ -2409,6 +2497,106 @@ mod thumbnail_cache_tests {
             .sum();
         assert!(total <= 25, "cache should be pruned below the budget");
         assert!(total > 0, "pruning should not remove everything");
+
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[tokio::test]
+    async fn prune_missing_items_removes_deleted_files() {
+        use super::{prune_missing_items, upsert_media_batch, MediaItem};
+        use sqlx::sqlite::SqlitePoolOptions;
+
+        let db = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("open in-memory database");
+        sqlx::query(
+            "CREATE TABLE media_items (id TEXT PRIMARY KEY, path TEXT NOT NULL UNIQUE, name TEXT NOT NULL, extension TEXT NOT NULL, kind TEXT NOT NULL, size INTEGER NOT NULL, modified_at INTEGER NOT NULL, captured_at INTEGER, width INTEGER, height INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, favorite INTEGER DEFAULT 0, hidden INTEGER DEFAULT 0)",
+        )
+        .execute(&db)
+        .await
+        .expect("create media_items");
+        sqlx::query(
+            "CREATE TABLE media_tags (media_id TEXT NOT NULL, tag_id TEXT NOT NULL, PRIMARY KEY (media_id, tag_id))",
+        )
+        .execute(&db)
+        .await
+        .expect("create media_tags");
+        sqlx::query(
+            "CREATE TABLE album_items (media_id TEXT NOT NULL, album_id TEXT NOT NULL, PRIMARY KEY (media_id, album_id))",
+        )
+        .execute(&db)
+        .await
+        .expect("create album_items");
+
+        let root = std::env::temp_dir().join(format!(
+            "stillroom-prune-test-{}",
+            Uuid::new_v4()
+        ));
+        fs::create_dir_all(&root).expect("create test dir");
+
+        // Create two real files
+        let file1 = root.join("photo1.jpg");
+        let file2 = root.join("photo2.jpg");
+        fs::write(&file1, b"fake jpeg").unwrap();
+        fs::write(&file2, b"fake jpeg").unwrap();
+
+        // Insert three items: two with existing files, one with a deleted file
+        let item1 = MediaItem::new(file1.to_string_lossy().into_owned(), "photo1.jpg".into(), "jpg".into(), "photo".into(), 9, 1000);
+        let item2 = MediaItem::new(file2.to_string_lossy().into_owned(), "photo2.jpg".into(), "jpg".into(), "photo".into(), 9, 1000);
+        let deleted_path = root.join("deleted.jpg").to_string_lossy().into_owned();
+        let mut item3 = MediaItem::new(deleted_path.clone(), "deleted.jpg".into(), "jpg".into(), "photo".into(), 9, 1000);
+        upsert_media_batch(&db, &[(item1.clone(), None, None), (item2.clone(), None, None), (item3.clone(), None, None)]).await.expect("insert items");
+
+        // Add some relations for item3
+        sqlx::query("INSERT INTO media_tags (media_id, tag_id) VALUES (?, 'tag1')")
+            .bind(&item3.id)
+            .execute(&db)
+            .await
+            .expect("insert tag");
+        sqlx::query("INSERT INTO album_items (media_id, album_id) VALUES (?, 'album1')")
+            .bind(&item3.id)
+            .execute(&db)
+            .await
+            .expect("insert album");
+
+        // Prune with only file1 and file2 in seen_paths
+        let mut seen = HashSet::new();
+        seen.insert(file1.to_string_lossy().into_owned());
+        seen.insert(file2.to_string_lossy().into_owned());
+
+        let removed = prune_missing_items(&db, root.to_str().unwrap(), &seen).await.expect("prune should succeed");
+        assert_eq!(removed, 1, "should have removed the deleted file's row");
+
+        // Verify item3 is gone from media_items
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM media_items WHERE id = ?")
+            .bind(&item3.id)
+            .fetch_one(&db)
+            .await
+            .expect("count item3");
+        assert_eq!(count, 0);
+
+        // Verify relations are also gone
+        let tag_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM media_tags WHERE media_id = ?")
+            .bind(&item3.id)
+            .fetch_one(&db)
+            .await
+            .expect("count tags");
+        assert_eq!(tag_count, 0);
+        let album_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM album_items WHERE media_id = ?")
+            .bind(&item3.id)
+            .fetch_one(&db)
+            .await
+            .expect("count albums");
+        assert_eq!(album_count, 0);
+
+        // item1 and item2 should remain
+        let remaining: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM media_items")
+            .fetch_one(&db)
+            .await
+            .expect("count remaining");
+        assert_eq!(remaining, 2);
 
         fs::remove_dir_all(&root).ok();
     }

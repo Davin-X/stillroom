@@ -1,10 +1,12 @@
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tauri::{State, Manager, Emitter, Window};
+use tauri::{AppHandle, State, Manager, Emitter, Window};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use crate::{AppState, Database, models::*};
 use anyhow::Result;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 use time::OffsetDateTime;
 use sqlx::{SqlitePool, Sqlite, QueryBuilder, Row};
@@ -13,7 +15,7 @@ use std::path::{Path, PathBuf};
 use image::codecs::jpeg::JpegEncoder;
 use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 use image::codecs::webp::WebPEncoder;
-use image::{DynamicImage, GenericImageView, ImageEncoder};
+use image::{DynamicImage, GenericImageView, ImageDecoder, ImageEncoder};
 use walkdir::WalkDir;
 
 // ===== Request/Response Types =====
@@ -869,10 +871,260 @@ async fn hydrate_relations(db: &SqlitePool, items: &mut [MediaItem]) -> Result<(
     Ok(())
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThumbnailRequest {
+    item_id: String,
+    size: u32,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThumbnailResponse {
+    item_id: String,
+    data_url: String,
+    width: u32,
+    height: u32,
+}
+
+/// Large originals should be downsampled by macOS ImageIO (via `sips`) instead
+/// of being decoded into a full-resolution buffer just to shrink them.
+const LARGE_THUMBNAIL_SOURCE_BYTES: i64 = 8 * 1024 * 1024;
+/// Thumbnails are small, but they should still have a predictable disk budget.
+const THUMBNAIL_CACHE_LIMIT_BYTES: u64 = 512 * 1024 * 1024;
+const THUMBNAIL_PRUNE_INTERVAL_SECS: u64 = 60 * 60;
+static LAST_THUMBNAIL_PRUNE_EPOCH: AtomicU64 = AtomicU64::new(0);
+
 #[tauri::command]
-pub async fn get_item_thumbnail(request: serde_json::Value, state: State<'_, AppState>) -> Result<serde_json::Value, String> {
-    let _ = (request, state);
-    Err("Not implemented".to_string())
+pub async fn get_item_thumbnail(
+    request: ThumbnailRequest,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<ThumbnailResponse, String> {
+    if !matches!(request.size, 64 | 128 | 256 | 512 | 1024) {
+        return Err("Unsupported thumbnail size".to_string());
+    }
+
+    let db = get_db(&state)?;
+    let item = sqlx::query_as::<_, (String, i64, i64)>(
+        "SELECT path, modified_at, size FROM media_items WHERE id = ? AND kind = 'photo'",
+    )
+    .bind(&request.item_id)
+    .fetch_optional(&db)
+    .await
+    .map_err(|error| error.to_string())?
+    .ok_or_else(|| "Photo not found in library".to_string())?;
+
+    let cache_root = app.path().app_cache_dir().map_err(|error| error.to_string())?.join("thumbnails");
+    tokio::fs::create_dir_all(&cache_root).await.map_err(|error| error.to_string())?;
+    let cache_key = thumbnail_cache_key(&request.item_id, item.1, item.2, request.size);
+    let digest = ring::digest::digest(&ring::digest::SHA256, cache_key.as_bytes());
+    let cache_path = cache_root.join(format!("{}.jpg", hex::encode(digest.as_ref())));
+
+    let cached = if let Ok(bytes) = tokio::fs::read(&cache_path).await {
+        image::image_dimensions(&cache_path).ok().map(|(width, height)| (bytes, width, height))
+    } else {
+        None
+    };
+    let (bytes, width, height) = if let Some(cached) = cached {
+        cached
+    } else {
+        let _ = tokio::fs::remove_file(&cache_path).await;
+        let source_path = item.0;
+        let source_size = item.2;
+        let target_path = cache_path.clone();
+        let size = request.size;
+        let generated = tokio::task::spawn_blocking(move || {
+            generate_cached_thumbnail(&source_path, &target_path, size, source_size)
+        })
+        .await
+        .map_err(|error| format!("Thumbnail worker failed: {error}"))??;
+        maybe_prune_thumbnail_cache(cache_root.clone());
+        generated
+    };
+
+    Ok(ThumbnailResponse {
+        item_id: request.item_id,
+        data_url: format!("data:image/jpeg;base64,{}", BASE64.encode(bytes)),
+        width,
+        height,
+    })
+}
+
+/// Cache identity must include every input that changes the rendered image.
+/// Thumbnails for the same photo at different sizes are distinct files.
+fn thumbnail_cache_key(item_id: &str, modified_at: i64, source_size: i64, thumbnail_size: u32) -> String {
+    format!("{item_id}:{modified_at}:{source_size}:{thumbnail_size}:v1")
+}
+
+/// Keep the cache bounded without making every thumbnail request pay for a
+/// directory scan. The first cache miss after an interval triggers a detached
+/// cleanup, and concurrent requests are deduplicated by the epoch compare-exchange.
+fn maybe_prune_thumbnail_cache(root: PathBuf) {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0);
+    let last = LAST_THUMBNAIL_PRUNE_EPOCH.load(Ordering::Relaxed);
+    if now.saturating_sub(last) < THUMBNAIL_PRUNE_INTERVAL_SECS {
+        return;
+    }
+    if LAST_THUMBNAIL_PRUNE_EPOCH
+        .compare_exchange(last, now, Ordering::Relaxed, Ordering::Relaxed)
+        .is_err()
+    {
+        return;
+    }
+    tokio::task::spawn_blocking(move || {
+        prune_thumbnail_cache(&root, THUMBNAIL_CACHE_LIMIT_BYTES);
+    });
+}
+
+/// Remove the oldest thumbnails until the directory fits the budget.
+fn prune_thumbnail_cache(root: &Path, max_bytes: u64) {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+
+    let mut files = Vec::new();
+    let mut total = 0_u64;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|extension| extension.to_str()) != Some("jpg") {
+            continue;
+        }
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+        if !metadata.is_file() {
+            continue;
+        }
+        let size = metadata.len();
+        let modified = metadata.modified().unwrap_or(UNIX_EPOCH);
+        total += size;
+        files.push((path, size, modified));
+    }
+
+    if total <= max_bytes {
+        return;
+    }
+
+    // Cache files are written once, so modified time is a good proxy for age.
+    files.sort_by_key(|(_, _, modified)| *modified);
+    for (path, size, _) in files {
+        if total <= max_bytes {
+            break;
+        }
+        if std::fs::remove_file(&path).is_ok() {
+            total = total.saturating_sub(size);
+        }
+    }
+}
+
+fn generate_cached_thumbnail(
+    source: &str,
+    destination: &Path,
+    size: u32,
+    source_size: i64,
+) -> Result<(Vec<u8>, u32, u32), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let extension = Path::new(source)
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        let native_only = matches!(extension.as_str(), "heic" | "heif" | "avif");
+        if native_only || source_size >= LARGE_THUMBNAIL_SOURCE_BYTES {
+            let reason = if native_only { "native format" } else { "large source" };
+            return generate_with_macos_sips(source, destination, size, reason);
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = source_size;
+
+    let mut reader = image::ImageReader::open(source)
+        .map_err(|error| format!("Could not read photo: {error}"))?
+        .with_guessed_format()
+        .map_err(|error| format!("Could not identify photo format: {error}"))?;
+    let mut decoder = match reader.into_decoder() {
+        Ok(decoder) => decoder,
+        Err(error) => {
+            let reason = format!("decode failed: {error}");
+            return generate_with_macos_sips(source, destination, size, &reason);
+        }
+    };
+    let orientation = decoder.orientation().unwrap_or(image::metadata::Orientation::NoTransforms);
+    let mut image = match DynamicImage::from_decoder(decoder) {
+        Ok(image) => image,
+        Err(error) => {
+            let reason = format!("decode failed: {error}");
+            return generate_with_macos_sips(source, destination, size, &reason);
+        }
+    };
+    image.apply_orientation(orientation);
+    let thumbnail = image.thumbnail(size, size).to_rgb8();
+    let (width, height) = (thumbnail.width(), thumbnail.height());
+    let mut bytes = Vec::new();
+    JpegEncoder::new_with_quality(&mut bytes, 78)
+        .encode(&thumbnail, width, height, image::ExtendedColorType::Rgb8)
+        .map_err(|error| format!("Could not encode thumbnail: {error}"))?;
+
+    let temporary = destination.with_extension(format!("{}.tmp", Uuid::new_v4()));
+    std::fs::write(&temporary, &bytes).map_err(|error| error.to_string())?;
+    commit_thumbnail_file(&temporary, destination)?;
+    Ok((bytes, width, height))
+}
+
+fn commit_thumbnail_file(temporary: &Path, destination: &Path) -> Result<(), String> {
+    match std::fs::rename(&temporary, destination) {
+        Ok(()) => {}
+        Err(_) if destination.exists() => { let _ = std::fs::remove_file(&temporary); }
+        Err(error) => { let _ = std::fs::remove_file(&temporary); return Err(error.to_string()); }
+    }
+    Ok(())
+}
+
+/// `sips` is a thin wrapper over macOS ImageIO, which downsamples during
+/// decode. That keeps memory flat for large photos and handles HEIC/HEIF.
+#[cfg(target_os = "macos")]
+fn generate_with_macos_sips(source: &str, destination: &Path, size: u32, reason: &str) -> Result<(Vec<u8>, u32, u32), String> {
+    use std::process::Command;
+
+    let temporary = destination.with_extension(format!("{}.tmp.jpg", Uuid::new_v4()));
+    let output = Command::new("/usr/bin/sips")
+        .args(["-s", "format", "jpeg", "-Z", &size.to_string()])
+        .arg(source)
+        .arg("--out")
+        .arg(&temporary)
+        .output()
+        .map_err(|error| format!("Could not create thumbnail ({reason}); macOS ImageIO failed: {error}"))?;
+    if !output.status.success() {
+        let _ = std::fs::remove_file(&temporary);
+        let detail = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Could not create thumbnail ({reason}): {}", detail.trim()));
+    }
+    let dimensions = match image::image_dimensions(&temporary) {
+        Ok(dimensions) => dimensions,
+        Err(error) => {
+            let _ = std::fs::remove_file(&temporary);
+            return Err(error.to_string());
+        }
+    };
+    let bytes = match std::fs::read(&temporary) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let _ = std::fs::remove_file(&temporary);
+            return Err(error.to_string());
+        }
+    };
+    commit_thumbnail_file(&temporary, destination)?;
+    Ok((bytes, dimensions.0, dimensions.1))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn generate_with_macos_sips(_source: &str, _destination: &Path, _size: u32, reason: &str) -> Result<(Vec<u8>, u32, u32), String> {
+    Err(format!("Could not create thumbnail ({reason})"))
 }
 
 #[tauri::command]
@@ -2090,6 +2342,76 @@ pub async fn open_external(url: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn save_file(path: String, bytes: Vec<u8>) -> Result<(), String> {
     std::fs::write(&path, bytes).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod thumbnail_cache_tests {
+    use super::{prune_thumbnail_cache, thumbnail_cache_key};
+    use std::fs;
+    use uuid::Uuid;
+
+    #[test]
+    fn requested_size_changes_cache_identity() {
+        let small = thumbnail_cache_key("photo-1", 100, 2_000, 64);
+        let large = thumbnail_cache_key("photo-1", 100, 2_000, 1024);
+
+        assert_ne!(small, large);
+        assert!(small.contains(":64:"));
+        assert!(large.contains(":1024:"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn large_sources_use_the_native_downsample_path() {
+        let root = std::env::temp_dir().join(format!(
+            "stillroom-thumb-sips-test-{}",
+            Uuid::new_v4()
+        ));
+        fs::create_dir_all(&root).expect("create test dir");
+        let source = root.join("source.png");
+        image::RgbaImage::from_pixel(64, 32, image::Rgba([40, 90, 150, 255]))
+            .save(&source)
+            .expect("write source image");
+        let destination = root.join("thumb.jpg");
+
+        let (bytes, width, height) = super::generate_cached_thumbnail(
+            source.to_str().expect("source path"),
+            &destination,
+            32,
+            super::LARGE_THUMBNAIL_SOURCE_BYTES,
+        )
+        .expect("sips should create a thumbnail");
+
+        assert!(!bytes.is_empty());
+        assert!(width <= 32 && height <= 32);
+        assert!(destination.exists());
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn prune_keeps_cache_within_budget() {
+        let root = std::env::temp_dir().join(format!(
+            "stillroom-thumb-cache-test-{}",
+            Uuid::new_v4()
+        ));
+        fs::create_dir_all(&root).expect("create cache dir");
+        for index in 0..3 {
+            fs::write(root.join(format!("{index}.jpg")), [0_u8; 10]).expect("write cache file");
+        }
+
+        prune_thumbnail_cache(&root, 25);
+
+        let total: u64 = fs::read_dir(&root)
+            .expect("read cache dir")
+            .flatten()
+            .filter_map(|entry| entry.metadata().ok())
+            .map(|metadata| metadata.len())
+            .sum();
+        assert!(total <= 25, "cache should be pruned below the budget");
+        assert!(total > 0, "pruning should not remove everything");
+
+        fs::remove_dir_all(&root).ok();
+    }
 }
 
 #[cfg(test)]

@@ -1357,10 +1357,34 @@ pub async fn remove_library_folder(
         })
         .collect();
 
-    if delete_files.unwrap_or(false) {
-        for (_, item_path) in &targets {
-            trash::delete(item_path)
-                .map_err(|e| format!("Could not move {} to Trash: {}", item_path, e))?;
+    if delete_files.unwrap_or(false) && !targets.is_empty() {
+        // Chunk to avoid AppleScript command length limits.
+        const TRASH_CHUNK: usize = 200;
+        for chunk in targets.chunks(TRASH_CHUNK) {
+            // Escape paths for AppleScript string literals: backslashes and double quotes.
+            let posix_paths: Vec<String> = chunk
+                .iter()
+                .map(|(_, item_path)| {
+                    let escaped = item_path
+                        .replace('\\', "\\\\")
+                        .replace('"', "\\\"");
+                    format!("POSIX file \"{}\"", escaped)
+                })
+                .collect();
+            let script = format!(
+                "tell application \"Finder\" to delete {{{}}}",
+                posix_paths.join(", ")
+            );
+            // Run in blocking thread pool to avoid blocking async runtime.
+            tokio::task::spawn_blocking(move || {
+                std::process::Command::new("osascript")
+                    .arg("-e")
+                    .arg(&script)
+                    .status()
+            })
+            .await
+            .map_err(|e| format!("osascript task failed: {e}"))?
+            .map_err(|e| format!("Could not move files to Trash: {e}"))?;
         }
     }
 
@@ -1453,19 +1477,119 @@ pub async fn update_item_tags(item_id: String, tags: Vec<String>, state: State<'
 }
 
 #[tauri::command]
-pub async fn move_to_trash(paths: Vec<String>, state: State<'_, AppState>) -> Result<(), String> {
-    let db = get_db(&state)?;
-    for path in &paths {
-        // Move the original to the macOS Trash so it stays recoverable, then
-        // drop it from the catalog. Failures are surfaced rather than swallowed.
-        trash::delete(path).map_err(|e| format!("Could not move {} to Trash: {}", path, e))?;
+pub async fn move_to_trash(
+    paths: Vec<String>,
+    state: State<'_, AppState>,
+    window: Window,
+) -> Result<(), String> {
+    // Reset cancel flag so a previous cancel doesn't block a new trash operation.
+    SCAN_CANCEL.store(false, Ordering::SeqCst);
 
+    let db = get_db(&state)?;
+
+    // Filter to only files that exist on disk.
+    let paths: Vec<String> = paths
+        .into_iter()
+        .filter(|p| std::path::Path::new(p).exists())
+        .collect();
+    if paths.is_empty() {
+        return Err("Selected items no longer exist on disk.".to_string());
+    }
+
+    // Emit initial progress.
+    let _ = window.emit(
+        "import-progress",
+        json!({
+            "phase": "trashing",
+            "processed": 0,
+            "total": paths.len(),
+        }),
+    );
+
+    // Chunk into batches to avoid AppleScript command length limits.
+    // Each file path becomes ~100+ chars in AppleScript; 150 paths ~15KB, well under limits.
+    const TRASH_CHUNK: usize = 150;
+    let mut processed = 0;
+    for chunk in paths.chunks(TRASH_CHUNK) {
+        // Check cancel BEFORE trashing this chunk.
+        if SCAN_CANCEL.load(Ordering::SeqCst) {
+            return Err("Cancelled".to_string());
+        }
+
+        // Escape paths for AppleScript string literals: backslashes and double quotes.
+        let posix_paths: Vec<String> = chunk
+            .iter()
+            .map(|path| {
+                let escaped = path
+                    .replace('\\', "\\\\")
+                    .replace('"', "\\\"");
+                format!("POSIX file \"{}\"", escaped)
+            })
+            .collect();
+        let script = format!(
+            "tell application \"Finder\" to delete {{{}}}",
+            posix_paths.join(", ")
+        );
+
+        // Run osascript in blocking thread pool to avoid blocking async executor.
+        // This allows the executor to process cancel signals and yield to other tasks.
+        let script_for_log = script.clone(); // clone for error logging
+        let result = tokio::task::spawn_blocking(move || {
+            std::process::Command::new("osascript")
+                .arg("-e")
+                .arg(&script)
+                .output()
+        })
+        .await
+        .map_err(|e| format!("osascript task failed: {e}"))?;
+
+        let output = result.map_err(|e| format!("Could not execute osascript: {e}"))?;
+
+        // Check cancel AFTER osascript returns (it's synchronous, can't interrupt mid-call).
+        if SCAN_CANCEL.load(Ordering::SeqCst) {
+            return Err("Cancelled".to_string());
+        }
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            // Log the failing script for debugging (first 500 chars)
+            eprintln!("AppleScript failed: {}", &script_for_log[..script_for_log.len().min(500)]);
+            return Err(format!("Could not move files to Trash: {}", stderr.trim()));
+        }
+
+        processed += chunk.len();
+        let _ = window.emit(
+            "import-progress",
+            json!({
+                "phase": "trashing",
+                "processed": processed,
+                "total": paths.len(),
+            }),
+        );
+        tokio::task::yield_now().await;
+    }
+
+    // Emit final progress.
+    let _ = window.emit(
+        "import-progress",
+        json!({
+            "phase": "trashing",
+            "processed": paths.len(),
+            "total": paths.len(),
+        }),
+    );
+
+    // Remove from catalog in a single transaction.
+    let mut transaction = db.begin().await.map_err(|e| e.to_string())?;
+    for path in &paths {
         sqlx::query("DELETE FROM media_items WHERE path = ?")
             .bind(path)
-            .execute(&db)
+            .execute(&mut *transaction)
             .await
             .map_err(|e| e.to_string())?;
     }
+    transaction.commit().await.map_err(|e| e.to_string())?;
+
     Ok(())
 }
 
@@ -2059,17 +2183,102 @@ pub async fn find_duplicates(
         .map(|(index, _)| index)
         .collect();
 
-    // Keep hashing strictly serial. Duplicate checks can read many gigabytes,
-    // and parallel reads made the gallery compete with the rest of the system
-    // for SSD bandwidth on large libraries. Yield to the UI after each file.
-    let total = candidates.len() as u64;
-    let total_bytes: u64 = candidates
+    // Emit initial progress for fingerprinting phase
+    let _ = window.emit(
+        "import-progress",
+        json!({
+            "phase": "hashing",
+            "processed": 0,
+            "total": candidates.len(),
+            "currentFile": "Computing quick fingerprints…",
+        }),
+    );
+
+    // Phase 1: Quick fingerprint (first 64KB + size) for all candidates.
+    // Run in parallel batches to avoid blocking the executor.
+    let mut quick_fingerprints: Vec<(usize, String)> = Vec::with_capacity(candidates.len());
+    const FINGERPRINT_BATCH: usize = 50;
+    for chunk in candidates.chunks(FINGERPRINT_BATCH) {
+        if SCAN_CANCEL.load(Ordering::SeqCst) {
+            break;
+        }
+        // Process batch in blocking pool to avoid blocking executor
+        let paths: Vec<(usize, String, u64)> = chunk
+            .iter()
+            .map(|&index| {
+                let item = &items[index];
+                (index, item.path.clone(), item.size as u64)
+            })
+            .collect();
+        let fps = tokio::task::spawn_blocking(move || {
+            paths
+                .into_iter()
+                .filter_map(|(index, path, size)| {
+                    compute_quick_fingerprint(&path, size, 0).map(|fp| (index, fp))
+                })
+                .collect::<Vec<_>>()
+        })
+        .await
+        .map_err(|e| format!("Fingerprint task failed: {e}"))?;
+        
+        for (index, fp) in fps {
+            quick_fingerprints.push((index, fp));
+        }
+
+        let _ = window.emit(
+            "import-progress",
+            json!({
+                "phase": "hashing",
+                "processed": quick_fingerprints.len(),
+                "total": candidates.len(),
+                "currentFile": "Computing quick fingerprints…",
+            }),
+        );
+        tokio::task::yield_now().await;
+    }
+
+    // Group by quick fingerprint. Only groups with >1 member need full SHA-256.
+    let mut fp_groups: HashMap<String, Vec<usize>> = HashMap::new();
+    for (index, fp) in quick_fingerprints {
+        fp_groups.entry(fp).or_default().push(index);
+    }
+
+    let full_hash_candidates: Vec<usize> = fp_groups
+        .into_iter()
+        .filter(|(_, v)| v.len() > 1)
+        .flat_map(|(_, v)| v)
+        .collect();
+
+    // Phase 2: Full SHA-256 only for files that share a quick fingerprint.
+    // Use controlled concurrency (max 2 at a time) to avoid I/O saturation.
+    use std::sync::Arc;
+    use tokio::sync::Semaphore;
+
+    let total = full_hash_candidates.len() as u64;
+    let total_bytes: u64 = full_hash_candidates
         .iter()
         .map(|&index| items[index].size.max(0) as u64)
         .sum();
+    
+    let semaphore = Arc::new(Semaphore::new(2));
+    let mut hash_updates: Vec<(String, String)> = Vec::with_capacity(full_hash_candidates.len());
     let mut bytes_completed = 0u64;
-    let mut hash_updates: Vec<(String, String)> = Vec::with_capacity(candidates.len());
-    for (position, &index) in candidates.iter().enumerate() {
+    let mut processed = 0u64;
+
+    // Emit progress for full hash phase start
+    let _ = window.emit(
+        "import-progress",
+        json!({
+            "phase": "hashing",
+            "processed": 0,
+            "total": full_hash_candidates.len(),
+            "currentFile": "Computing full SHA-256…",
+        }),
+    );
+
+    // Process with controlled concurrency
+    let mut join_set = tokio::task::JoinSet::new();
+    for &index in &full_hash_candidates {
         if SCAN_CANCEL.load(Ordering::SeqCst) {
             break;
         }
@@ -2077,26 +2286,54 @@ pub async fn find_duplicates(
         let name = items[index].name.clone();
         let size = items[index].size.max(0) as u64;
         let id = items[index].id.clone();
-        let hash = compute_file_sha256_with_progress(
-            path,
-            name,
-            size,
-            bytes_completed,
-            total_bytes,
-            position as u64 + 1,
-            total,
-            window.clone(),
-        )
-        .await;
+        let sem = semaphore.clone();
+        let window_clone = window.clone();
+
+        join_set.spawn(async move {
+            let _permit = sem.acquire().await.ok();
+            if SCAN_CANCEL.load(Ordering::SeqCst) {
+                return None;
+            }
+            let hash = compute_full_sha256_with_progress(
+                path,
+                name,
+                size,
+                0, // bytes_before not needed for individual task
+                0,
+                1,
+                1,
+                window_clone,
+            )
+            .await;
+            Some((index, id, hash, size))
+        });
+    }
+
+    while let Some(result) = join_set.join_next().await {
         if SCAN_CANCEL.load(Ordering::SeqCst) {
             break;
         }
-        if let Some(hash) = hash {
-            hash_updates.push((id, hash.clone()));
-            items[index].sha256 = Some(hash);
+        if let Ok(Some((index, id, hash, size))) = result {
+            if SCAN_CANCEL.load(Ordering::SeqCst) {
+                break;
+            }
+            processed += 1;
+            if let Some(hash) = hash {
+                hash_updates.push((id.clone(), hash.clone()));
+                items[index].sha256 = Some(hash);
+            }
+            bytes_completed = bytes_completed.saturating_add(size);
+            let _ = window.emit(
+                "import-progress",
+                json!({
+                    "phase": "hashing",
+                    "processed": processed,
+                    "total": total,
+                    "currentFile": "Computing full SHA-256…",
+                }),
+            );
+            tokio::task::yield_now().await;
         }
-        bytes_completed = bytes_completed.saturating_add(size);
-        tokio::task::yield_now().await;
     }
 
     // Persist newly computed hashes in one transaction. This avoids a durable
@@ -2139,7 +2376,32 @@ pub async fn find_duplicates(
     Ok(groups)
 }
 
-async fn compute_file_sha256_with_progress(
+/// Two-phase duplicate detection:
+/// 1. Quick fingerprint: first 64KB + file size + mtime — O(1) per file
+/// 2. Full SHA-256 only for files that share a quick fingerprint.
+///
+/// This avoids reading entire multi-GB video files unless they actually
+/// have a matching prefix + size + mtime, which is extremely rare.
+const QUICK_FINGERPRINT_BYTES: u64 = 64 * 1024;
+
+fn compute_quick_fingerprint(path: &str, size: u64, _modified_at: i64) -> Option<String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut buf = [0u8; 64 * 1024];
+    let n = file.read(&mut buf).ok()?;
+    if n == 0 && size > 0 {
+        return None;
+    }
+    // Hash the first 64KB + file size. Omit mtime so files with identical
+    // content but different mtimes are correctly grouped as duplicates.
+    let mut ctx = ring::digest::Context::new(&ring::digest::SHA256);
+    ctx.update(&buf[..n]);
+    ctx.update(&size.to_le_bytes());
+    Some(hex::encode(ctx.finish().as_ref()))
+}
+
+/// Full SHA-256 with progress. Uses a large buffer and async I/O for throughput.
+async fn compute_full_sha256_with_progress(
     path: String,
     name: String,
     file_size: u64,
@@ -2149,33 +2411,26 @@ async fn compute_file_sha256_with_progress(
     total_files: u64,
     window: Window,
 ) -> Option<String> {
-    let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel::<u64>(8);
-    let hash_task = tokio::task::spawn_blocking(move || {
-        use std::io::Read;
-        let mut file = std::fs::File::open(&path).ok()?;
-        let mut ctx = ring::digest::Context::new(&ring::digest::SHA256);
-        let mut buf = [0u8; 1024 * 1024];
-        loop {
-            if SCAN_CANCEL.load(Ordering::SeqCst) {
-                return None;
-            }
-            let n = file.read(&mut buf).ok()?;
-            if n == 0 {
-                break;
-            }
-            ctx.update(&buf[..n]);
-            progress_tx.blocking_send(n as u64).ok()?;
-        }
-        Some(hex::encode(ctx.finish().as_ref()))
-    });
-
+    use tokio::io::AsyncReadExt;
+    let mut file = tokio::fs::File::open(&path).await.ok()?;
+    let mut ctx = ring::digest::Context::new(&ring::digest::SHA256);
+    // 64MB buffer for sequential throughput on SSD/NVMe.
+    let mut buf = vec![0u8; 64 * 1024 * 1024];
     let mut file_bytes = 0u64;
     let mut last_reported_bytes = 0u64;
     let mut last_reported_at = std::time::Instant::now();
-    while let Some(bytes) = progress_rx.recv().await {
-        file_bytes = file_bytes.saturating_add(bytes);
-        let should_report = file_bytes.saturating_sub(last_reported_bytes) >= 16 * 1024 * 1024
-            || last_reported_at.elapsed() >= std::time::Duration::from_millis(200);
+    loop {
+        if SCAN_CANCEL.load(Ordering::SeqCst) {
+            return None;
+        }
+        let n = file.read(&mut buf).await.ok()?;
+        if n == 0 {
+            break;
+        }
+        ctx.update(&buf[..n]);
+        file_bytes = file_bytes.saturating_add(n as u64);
+        let should_report = file_bytes.saturating_sub(last_reported_bytes) >= 64 * 1024 * 1024
+            || last_reported_at.elapsed() >= std::time::Duration::from_millis(500);
         if should_report {
             let _ = window.emit(
                 "import-progress",
@@ -2195,9 +2450,8 @@ async fn compute_file_sha256_with_progress(
             last_reported_bytes = file_bytes;
             last_reported_at = std::time::Instant::now();
         }
+        tokio::task::yield_now().await;
     }
-
-    let hash = hash_task.await.ok().flatten();
     let _ = window.emit(
         "import-progress",
         json!({
@@ -2213,7 +2467,7 @@ async fn compute_file_sha256_with_progress(
             "currentFileSize": file_size,
         }),
     );
-    hash
+    Some(hex::encode(ctx.finish().as_ref()))
 }
 
 #[tauri::command]

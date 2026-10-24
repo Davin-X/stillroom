@@ -122,7 +122,8 @@ function App() {
   const albumInputRef = useRef<HTMLInputElement | null>(null);
 
   const [albumPendingDelete, setAlbumPendingDelete] = useState<any | null>(null);
-  const [itemPendingDelete, setItemPendingDelete] = useState<string[] | null>(null);
+  const [itemPendingDeleteCount, setItemPendingDeleteCount] = useState<number>(0);
+  const itemPendingDeleteRef = useRef<string[] | null>(null);
   const [albumRemovePending, setAlbumRemovePending] = useState<{ albumId: string; itemIds: string[] } | null>(null);
   const [deletingAlbum, setDeletingAlbum] = useState(false);
 
@@ -131,6 +132,7 @@ function App() {
   const [folderPendingRemove, setFolderPendingRemove] = useState<LibraryFolder | null>(null);
   const [removingFolder, setRemovingFolder] = useState(false);
   const [sourcesSheetOpen, setSourcesSheetOpen] = useState(false);
+  const rescanInProgress = useRef(false);
   // Where the viewer returns when it closes. Opening the viewer from Hidden
   // keeps the user in Hidden; the Library viewer returns to Library.
   const [viewerOrigin, setViewerOrigin] = useState<Screen>("Library");
@@ -391,8 +393,8 @@ function App() {
   }, []);
 
   // Latest render values, so long-lived event handlers never read stale stores.
-  const liveRef = useRef({ library, viewer, edit, settings, screen, viewerOrigin, albumDialogOpen, albumPickerOpen, albumPendingDelete, itemPendingDelete, folderPendingRemove, sourcesSheetOpen });
-  liveRef.current = { library, viewer, edit, settings, screen, viewerOrigin, albumDialogOpen, albumPickerOpen, albumPendingDelete, itemPendingDelete, folderPendingRemove, sourcesSheetOpen };
+  const liveRef = useRef({ library, viewer, edit, settings, screen, viewerOrigin, albumDialogOpen, albumPickerOpen, albumPendingDelete, itemPendingDeleteCount, folderPendingRemove, sourcesSheetOpen });
+  liveRef.current = { library, viewer, edit, settings, screen, viewerOrigin, albumDialogOpen, albumPickerOpen, albumPendingDelete, itemPendingDeleteCount, folderPendingRemove, sourcesSheetOpen };
 
   // Handlers are declared further down; stable listeners reach them through a ref.
   const handlersRef = useRef<{
@@ -456,7 +458,7 @@ function App() {
 
     // Keyboard shortcuts
     const handleKeyDown = (e: KeyboardEvent) => {
-      const { library, viewer, screen, viewerOrigin, albumDialogOpen, albumPickerOpen, albumPendingDelete, itemPendingDelete, folderPendingRemove, sourcesSheetOpen } = liveRef.current;
+      const { library, viewer, screen, viewerOrigin, albumDialogOpen, albumPickerOpen, albumPendingDelete, itemPendingDeleteCount, folderPendingRemove, sourcesSheetOpen } = liveRef.current;
       const mod = e.metaKey || e.ctrlKey;
       const key = e.key.toLowerCase();
 
@@ -466,7 +468,7 @@ function App() {
 
       // While a modal is open, every key belongs to it (the dialogs own Enter
       // and Escape) instead of the global shortcut map.
-      if (albumDialogOpen || albumPickerOpen || albumPendingDelete || itemPendingDelete || folderPendingRemove || sourcesSheetOpen) return;
+      if (albumDialogOpen || albumPickerOpen || albumPendingDelete || itemPendingDeleteCount > 0 || folderPendingRemove || sourcesSheetOpen) return;
 
       if (mod && key === "o") { e.preventDefault(); handlersRef.current.importFolder(); return; }
       if (mod && key === "i") { e.preventDefault(); handlersRef.current.importFiles(); return; }
@@ -722,27 +724,37 @@ function App() {
       showNotice(`Could not remove: ${describeError(error)}`);
     }
   };
-  const confirmDeleteItem = async () => {
-    if (!itemPendingDelete) return;
-    try {
-      await library.deleteItems(itemPendingDelete);
-      showNotice(`Moved ${itemPendingDelete.length} item${itemPendingDelete.length === 1 ? "" : "s"} to Trash.`);
-      setItemPendingDelete(null);
-    } catch (error) {
-      showNotice(`Could not delete: ${describeError(error)}`);
-    }
+  const confirmDeleteItem = () => {
+    if (itemPendingDeleteCount === 0 || !itemPendingDeleteRef.current) return;
+    const ids = itemPendingDeleteRef.current;
+    // Close dialog immediately
+    setItemPendingDeleteCount(0);
+    itemPendingDeleteRef.current = null;
+    // Run delete in background
+    void (async () => {
+      try {
+        await library.deleteItems(ids);
+        showNotice(`Moved ${ids.length.toLocaleString()} item${ids.length === 1 ? "" : "s"} to Trash.`);
+      } catch (error) {
+        const msg = String(error);
+        if (msg !== "Cancelled") {
+          showNotice(`Could not delete: ${describeError(error)}`);
+        }
+      }
+    })();
   };
 
   useEffect(() => {
-    if (!itemPendingDelete) return;
+    if (itemPendingDeleteCount === 0) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       e.preventDefault();
-      setItemPendingDelete(null);
+      setItemPendingDeleteCount(0);
+      itemPendingDeleteRef.current = null;
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [itemPendingDelete]);
+  }, [itemPendingDeleteCount]);
   const confirmDeleteAlbum = async () => {
     if (!albumPendingDelete || deletingAlbum) return;
     const wasActiveAlbum = library.activeAlbum === albumPendingDelete.id;
@@ -1113,27 +1125,49 @@ const importFolder = async () => {
 };
 
 const rescanSources = async () => {
+  // Prevent concurrent rescans (e.g. double-click on the button)
+  if (rescanInProgress.current) return;
+  rescanInProgress.current = true;
   try {
     library.setBusy(true);
-    library.setProgress({ phase: "scanning", processed: 0, total: 0 });
+    // Ensure any previous cancel is cleared before starting new scan
+    await tauri.library.cancelScan();
     await library.loadFolders();
     const folders = useLibraryStore.getState().folders;
     let cancelled = false;
-    for (const folder of folders) {
+    let totalDiscovered = 0;
+
+    for (let i = 0; i < folders.length; i++) {
+      const folder = folders[i];
+      // Show which source is being scanned
+      library.setProgress({
+        phase: "scanning",
+        processed: i,
+        total: folders.length,
+        currentFile: folder.path,
+      });
       const result = await tauri.library.scan(folder.path, true);
+      totalDiscovered += result.discoveredCount || 0;
       if (result.cancelled) {
         cancelled = true;
         break;
       }
     }
+
     await library.loadLibrary();
     await library.loadFolders();
-    showNotice(cancelled ? "Rescan cancelled. Completed work is saved; scan again to continue." : "Sources rescanned.");
+    library.setProgress(null);
+    library.setBusy(false);
+    rescanInProgress.current = false;
+    showNotice(cancelled
+      ? `Rescan cancelled. ${totalDiscovered.toLocaleString()} ${totalDiscovered === 1 ? "item" : "items"} processed from completed sources.`
+      : `Sources rescanned. ${totalDiscovered.toLocaleString()} ${totalDiscovered === 1 ? "item" : "items"} processed.`);
   } catch (e) {
     showNotice(`Rescan failed: ${describeError(e)}`);
   } finally {
     library.setBusy(false);
     library.setProgress(null);
+    rescanInProgress.current = false;
   }
 };
 
@@ -1164,7 +1198,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
           })()}
           {library.busy && (
             <span className="topbar-busy">
-              {library.progress?.phase === "hashing" ? "Checking duplicates…" : "Indexing…"}
+              {library.progress?.phase === "hashing" ? "Checking duplicates…" : library.progress?.phase === "reading" ? "Loading library…" : "Indexing…"}
             </span>
           )}
         </div>
@@ -1377,7 +1411,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             onSetHiddenForIds={library.setHiddenForIds}
             onUpdateTags={library.updateItemTags}
             onDeleteItems={library.deleteItems}
-            onRequestDeleteItems={(ids: string[]) => setItemPendingDelete(ids)}
+            onRequestDeleteItems={(ids: string[]) => { itemPendingDeleteRef.current = ids; setItemPendingDeleteCount(ids.length); }}
             onRequestRemoveFromAlbum={(albumId: string, itemIds: string[]) => setAlbumRemovePending({ albumId, itemIds })}
             onOpenViewer={(id?: string) => {
               setViewerOrigin("Library");
@@ -1579,7 +1613,7 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             onNavigate={openScreen}
             onCreateAlbum={openAlbumDialog}
             onOpenAlbumPicker={(itemIds?: string[]) => openAlbumPicker(itemIds)}
-            onRequestDeleteItems={(ids: string[]) => setItemPendingDelete(ids)}
+            onRequestDeleteItems={(ids: string[]) => { itemPendingDeleteRef.current = ids; setItemPendingDeleteCount(ids.length); }}
             onOpenEdit={(item: any) => { edit.open(item); setScreen("Edit"); }}
             onOpenViewer={(id?: string) => {
               setViewerOrigin("Hidden");
@@ -1597,16 +1631,12 @@ handlersRef.current = { importFolder, importFiles, showNotice };
             onClear={library.clearDuplicates}
             busy={library.busy}
             assetUrl={assetUrl}
-            onTrashIds={async (ids: string[]) => {
-              if (!ids.length) return;
-              await library.deleteItems(ids);
-              library.clearDuplicates();
-              await library.scanDuplicates();
-            }}
+            onRequestDeleteItems={(ids: string[]) => { itemPendingDeleteRef.current = ids; setItemPendingDeleteCount(ids.length); }}
             onHideIds={async (ids: string[]) => {
               if (!ids.length) return;
+              library.showNotice(`Hiding ${ids.length.toLocaleString()} item(s)…`);
               await library.setHiddenForIds(ids, true);
-              library.clearDuplicates();
+              library.showNotice(`Hidden ${ids.length.toLocaleString()} item(s).`);
               await library.scanDuplicates();
             }}
           />}
@@ -1645,6 +1675,76 @@ handlersRef.current = { importFolder, importFiles, showNotice };
                 {library.progress.currentFile && <small className="busy-indicator-current-file" title={library.progress.currentFile}>{library.progress.currentFile}</small>}
               </div>
             );
+          })() : library.progress.phase === "trashing" ? (() => {
+            const processed = library.progress.processed ?? 0;
+            const total = library.progress.total ?? 0;
+            const percent = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
+            return (
+              <div className="busy-indicator-progress-copy">
+                <b>Moving to Trash · {percent}%</b>
+                <small>{processed.toLocaleString()} of {total.toLocaleString()} files</small>
+                <div className="busy-indicator-progress-track" role="progressbar" aria-label="Trash progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
+                  <span style={{ width: `${percent}%` }} />
+                </div>
+              </div>
+            );
+          })() : library.progress.phase === "reading" ? (() => (
+            <div className="busy-indicator-progress-copy">
+              <b>Loading library…</b>
+              <small>Reading database</small>
+              <div className="busy-indicator-progress-track" role="progressbar" aria-label="Loading library" aria-valuemin={0} aria-valuemax={100} aria-valuenow={0}>
+                <span style={{ width: "0%" }} />
+              </div>
+            </div>
+          ))() : library.progress.phase === "scanning" ? (() => {
+            // Distinguish source-level vs file-level progress:
+            // - source-level: total <= number of folders (frontend sets it)
+            // - file-level: total = files in current folder (backend sets it)
+            // Heuristic: if currentFile is a directory path, it's source-level.
+            const isSourceLevel = library.progress.currentFile
+              ? library.progress.currentFile.endsWith("/") || 
+                !library.progress.currentFile.includes(".")
+              : true;
+            const processed = library.progress.processed ?? 0;
+            const total = library.progress.total ?? 0;
+            const percent = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
+            
+            // Extract just the folder/file name from path
+            const getName = (path: string) => path.split("/").pop() || path;
+            
+            if (isSourceLevel) {
+              return (
+                <div className="busy-indicator-progress-copy">
+                  <b>Scanning source {processed + 1} of {total} · {percent}%</b>
+                  <small>{library.progress.currentFile ? getName(library.progress.currentFile) : "Preparing…"}</small>
+                  <div className="busy-indicator-progress-track" role="progressbar" aria-label="Scan progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
+                    <span style={{ width: `${percent}%` }} />
+                  </div>
+                </div>
+              );
+            } else {
+              // Show source folder + file progress in two lines
+              const currentFileName = library.progress.currentFile
+                ? library.progress.currentFile.split("/").pop() || library.progress.currentFile
+                : "files";
+              // Extract source folder from current file path
+              let sourceFolder = "files";
+              if (library.progress.currentFile) {
+                const parts = library.progress.currentFile.split("/");
+                if (parts.length >= 2) {
+                  sourceFolder = parts[parts.length - 2]; // parent folder name
+                }
+              }
+              return (
+                <div className="busy-indicator-progress-copy">
+                  <b>Scanning {sourceFolder} · {processed.toLocaleString()} of {total.toLocaleString()} · {percent}%</b>
+                  <small>{currentFileName}</small>
+                  <div className="busy-indicator-progress-track" role="progressbar" aria-label="File scan progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
+                    <span style={{ width: `${percent}%` }} />
+                  </div>
+                </div>
+              );
+            }
           })() : `${library.progress.phase} ${library.progress.processed}/${library.progress.total}`}
           <button
             className="busy-indicator-cancel"
@@ -1936,11 +2036,11 @@ handlersRef.current = { importFolder, importFiles, showNotice };
         </div>
       )}
 
-      {itemPendingDelete && (
+      {itemPendingDeleteCount > 0 && (
         <div
           className="dialog-backdrop"
           role="presentation"
-          onMouseDown={(e) => { if (e.target === e.currentTarget) setItemPendingDelete(null); }}
+          onMouseDown={(e) => { if (e.target === e.currentTarget) { setItemPendingDeleteCount(0); itemPendingDeleteRef.current = null; } }}
         >
           <div className="album-dialog delete-album-dialog" role="alertdialog" aria-modal="true">
             <div className="dialog-heading">
@@ -1948,13 +2048,13 @@ handlersRef.current = { importFolder, importFiles, showNotice };
                 <p className="eyebrow">PHOTO</p>
                 <h2>Delete Item?</h2>
               </div>
-              <button type="button" className="dialog-close" aria-label="Close" onClick={() => setItemPendingDelete(null)}>×</button>
+              <button type="button" className="dialog-close" aria-label="Close" onClick={() => { setItemPendingDeleteCount(0); itemPendingDeleteRef.current = null; }}>×</button>
             </div>
             <p className="delete-album-copy">
-              Are you sure you want to delete <b>{itemPendingDelete.length} item{itemPendingDelete.length === 1 ? "" : "s"}</b>? They will be moved to Trash.
+              Are you sure you want to delete <b>{itemPendingDeleteCount} item{itemPendingDeleteCount === 1 ? "" : "s"}</b>? They will be moved to Trash.
             </p>
             <div className="dialog-actions">
-              <button type="button" className="quiet-button" onClick={() => setItemPendingDelete(null)}>Cancel</button>
+              <button type="button" className="quiet-button" onClick={() => { setItemPendingDeleteCount(0); itemPendingDeleteRef.current = null; }}>Cancel</button>
               <button type="button" className="danger-button" onClick={confirmDeleteItem}>Delete</button>
             </div>
           </div>
@@ -3178,6 +3278,7 @@ function LibraryScreen(props: any) {
                   );
                 })()}
               </div>
+
             </div>
           </div>
 
@@ -3781,7 +3882,7 @@ function ViewerScreen(props: any) {
         {stripStart > 0 && <span className="filmstrip-spacer" aria-hidden="true" style={{ flexBasis: `${stripStart * 60}px` }} />}
         {props.items.slice(stripStart, stripEnd).map((item: any) => (
           <button type="button" title={item.name} className={item.id === props.selected?.id ? "active" : ""} key={item.id} onClick={() => props.onSetPhoto(item.id)}>
-            {item.kind === "photo" ? <img src={props.assetUrl(item.path)} alt={item.name} loading="lazy" decoding="async" style={draftImageStyle(draftTransforms, item.id)} />
+            {item.kind === "photo" ? <CachedThumbnail itemId={item.id} name={item.name} size={128} style={draftImageStyle(draftTransforms, item.id)} />
               : item.kind === "video" ? <VideoThumb src={props.assetUrl(item.path)} name={item.name} />
               : <span>{item.extension.toUpperCase()}</span>}
             <KindDot kind={item.kind} />
@@ -3955,7 +4056,7 @@ function EditScreen(props: any) {
                 {savedDraftItems.map((item: any) => (
                   <div key={item.id} className="edit-draft-card">
                     <button className="edit-draft-open" type="button" onClick={() => { props.onSaveDraft?.(); props.onOpenEdit?.(item); setDraftTrayOpen(false); }} title={`Open draft for ${item.name}`}>
-                      <img src={props.assetUrl(item.path)} alt="" style={draftImageStyle(draftTransforms, item.id)} />
+                      <CachedThumbnail itemId={item.id} name={item.name} size={256} style={draftImageStyle(draftTransforms, item.id)} />
                       <span>{item.name}</span>
                     </button>
                     <button className="edit-draft-remove" type="button" aria-label={`Remove draft for ${item.name}`} title="Remove draft" onClick={() => { clearEditDraft(item.id); props.onNotice?.("Draft removed"); }}>
@@ -4331,7 +4432,7 @@ function BatchScreen(props: any) {
                         title={`Remove ${item.name} from this batch`}
                       >
                         {item.kind === "photo" ? (
-                          <img src={props.assetUrl(item.path)} alt="" loading="lazy" />
+                          <CachedThumbnail itemId={item.id} name={item.name} size={128} />
                         ) : (
                           <span className={`batch-thumb-kind ${item.kind}`}>{item.kind === "raw" ? "RAW" : "VID"}</span>
                         )}
@@ -4523,7 +4624,7 @@ function BatchScreen(props: any) {
                   <div key={item.id} className="batch-preview-row">
                     <span className="batch-preview-thumb">
                       {item.kind === "photo"
-                        ? <img src={props.assetUrl(item.path)} alt="" loading="lazy" />
+                        ? <CachedThumbnail itemId={item.id} name={item.name} size={128} />
                         : <span>{item.kind === "raw" ? "RAW" : "VID"}</span>}
                     </span>
                     <span className="batch-preview-name">
@@ -4706,15 +4807,67 @@ function AlbumsScreen(props: any) {
 function DuplicatesScreen(props: any) {
   const draftTransforms = useDraftTransforms();
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  // Progressive rendering for large duplicate result sets
+  const [renderLimit, setRenderLimit] = useState(50);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const groups = props.groups || [];
+  const totalCopies = useMemo(
+    () => groups.reduce((sum: number, g: any) => sum + (g.items?.length || 0), 0),
+    [groups]
+  );
+  const reclaimableBytes = useMemo(() => {
+    let bytes = 0;
+    groups.forEach((g: any) => {
+      (g.items || []).slice(1).forEach((it: any) => {
+        bytes += Number(it.size || 0);
+      });
+    });
+    return bytes;
+  }, [groups]);
+  const selectedBytes = useMemo(() => {
+    let bytes = 0;
+    groups.forEach((g: any) => {
+      (g.items || []).forEach((it: any) => {
+        if (selected.has(it.id)) bytes += Number(it.size || 0);
+      });
+    });
+    return bytes;
+  }, [groups, selected]);
+
   React.useEffect(() => {
     const ids = new Set<string>();
-    (props.groups || []).forEach((g: any) => {
+    groups.forEach((g: any) => {
       (g.items || []).forEach((it: any, i: number) => {
         if (i > 0) ids.add(it.id);
       });
     });
     setSelected(ids);
-  }, [props.groups]);
+  }, [groups]);
+
+  useEffect(() => {
+    setRenderLimit(50);
+    scrollRef.current?.scrollTo({ top: 0 });
+  }, [groups]);
+
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (!el || renderLimit >= groups.length) return;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 800) {
+      setRenderLimit((n) => Math.min(n + 50, groups.length));
+    }
+  };
+
+  const toggleAllGroups = (expand: boolean) => {
+    if (expand) {
+      const all = new Set<string>();
+      groups.forEach((g: any) => all.add(g.sha256));
+      setExpandedGroups(all);
+    } else {
+      setExpandedGroups(new Set());
+    }
+  };
 
   const toggleSelected = (id: string) => {
     setSelected((prev) => {
@@ -4728,58 +4881,267 @@ function DuplicatesScreen(props: any) {
   const groupSelectedIds = (group: any) =>
     (group.items || []).filter((it: any) => selected.has(it.id)).map((it: any) => it.id);
 
-  return (
-    <div className="feature-page">
-      <div className="page-heading">
-        <div><p className="eyebrow">EXACT DUPLICATE SCAN</p><h1>Find identical files.</h1><p className="page-subtitle">SHA-256 checksums run locally. Similar-looking but different photos are not included.</p></div>
-        <button className="primary-button" type="button" onClick={props.onScan} disabled={props.busy}><RotateIcon size={14} /> Scan library</button>
-      </div>
-      {props.groups.length === 0 ? (
-        <div className="empty-state duplicate-empty"><span><DuplicatesIcon size={28} /></span><b>No duplicate scan yet</b><p>Compare file contents, not just names or file sizes.</p><button className="primary-button" type="button" onClick={props.onScan} disabled={props.busy}>Scan {props.items?.length || 0} files</button></div>
-      ) : (
-        <div>
-          <div className="duplicate-batch-bar">
-            <span>{selected.size} selected</span>
-            <button className="secondary-button" type="button" disabled={props.busy || selected.size === 0} onClick={() => props.onHideIds?.([...selected])}>Hide selected</button>
-            <button className="danger-button" type="button" disabled={props.busy || selected.size === 0} onClick={() => props.onTrashIds?.([...selected])}>Move selected to Trash</button>
-            <button className="secondary-button" type="button" disabled={props.busy} onClick={() => {
-              const ids = new Set<string>();
-              (props.groups || []).forEach((g: any) => (g.items || []).forEach((it: any, i: number) => { if (i > 0) ids.add(it.id); }));
-              setSelected(ids);
-            }}>Select all copies</button>
-            <button className="quiet-button" type="button" disabled={props.busy} onClick={() => setSelected(new Set())}>Clear selection</button>
+  const toggleGroupExpand = (sha256: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(sha256)) next.delete(sha256);
+      else next.add(sha256);
+      return next;
+    });
+  };
+
+  const isGroupExpanded = (sha256: string) => expandedGroups.has(sha256);
+  const shortHash = (sha: string | undefined) => (sha || "").slice(0, 16);
+
+
+  const groupItemsSelected = (group: any) =>
+    (group.items || []).slice(1).every((it: any) => selected.has(it.id));
+
+  const renderDuplicates = () => {
+
+    if (groups.length === 0) {
+      return (
+        <div className="empty-state duplicate-empty">
+          <span><DuplicatesIcon size={34} /></span>
+          <b>No duplicates found</b>
+          <p>Duplicate scans compare file content (SHA-256), not just names or sizes.</p>
+          <button className="primary-button" type="button" onClick={props.onScan} disabled={props.busy}>
+            Scan {props.items?.length || 0} files
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <>
+        <div className="duplicate-batch-bar">
+          <div className="duplicate-batch-summary">
+            <span>{selected.size} of {totalCopies} copies selected</span>
+            {selected.size > 0 && (
+              <small>{formatBytesSimple(selectedBytes)} selected · {formatBytesSimple(reclaimableBytes)} can be reclaimed</small>
+            )}
           </div>
-          {props.groups.map((group: any, index: number) => (
-            <section className="duplicate-result" key={index}>
-              <div className="duplicate-group-head"><div><b>Identical files</b><span>{group.items?.length || 0} copies · SHA-256 match</span></div>
+          <div className="duplicate-batch-actions">
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={props.busy || selected.size === 0}
+              onClick={() => props.onHideIds?.([...selected])}
+            >
+              Hide selected
+            </button>
+            <button
+              className="danger-button"
+              type="button"
+              disabled={props.busy || selected.size === 0}
+              onClick={() => props.onRequestDeleteItems?.([...selected])}
+            >
+              Move selected to Trash
+            </button>
+            <button
+              className="quiet-button"
+              type="button"
+              disabled={props.busy}
+              onClick={() => {
+                const ids = new Set<string>();
+                groups.forEach((g: any) =>
+                  (g.items || []).forEach((it: any, i: number) => {
+                    if (i > 0) ids.add(it.id);
+                  })
+                );
+                setSelected(ids);
+              }}
+            >
+              Select all copies
+            </button>
+            <button className="quiet-button" type="button" disabled={props.busy} onClick={() => setSelected(new Set())}>
+              Clear selection
+            </button>
+            <button
+              className="quiet-button"
+              type="button"
+              disabled={props.busy || expandedGroups.size === 0}
+              onClick={() => toggleAllGroups(false)}
+            >
+              Collapse all
+            </button>
+            <button
+              className="quiet-button"
+              type="button"
+              disabled={props.busy || expandedGroups.size === groups.length}
+              onClick={() => toggleAllGroups(true)}
+            >
+              Expand all
+            </button>
+          </div>
+        </div>
+        <div className="duplicate-scroll-container" ref={scrollRef} onScroll={handleScroll}>
+          {groups.slice(0, renderLimit).map((group: any) => (
+            <section className="duplicate-result" key={String(group.sha256)}>
+              <div className="duplicate-group-head">
+                <div className="duplicate-group-title">
+                  <b>Identical files</b>
+                  <span>{group.items?.length || 0} copies · SHA-256 match</span>
+                  <span className="duplicate-group-hash">{shortHash(group.sha256)}</span>
+                </div>
                 <div className="duplicate-group-actions">
-                  <button className="secondary-button" type="button" disabled={props.busy || groupSelectedIds(group).length === 0} onClick={() => props.onHideIds?.(groupSelectedIds(group))}>Hide selected</button>
-                  <button className="danger-button" type="button" disabled={props.busy || groupSelectedIds(group).length === 0} onClick={() => props.onTrashIds?.(groupSelectedIds(group))}>Move selected to Trash</button>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    disabled={props.busy || groupSelectedIds(group).length === 0}
+                    onClick={() => props.onHideIds?.(groupSelectedIds(group))}
+                  >
+                    Hide selected
+                  </button>
+                  <button
+                    className="danger-button"
+                    type="button"
+                    disabled={props.busy || groupSelectedIds(group).length === 0}
+                    onClick={() => props.onRequestDeleteItems?.(groupSelectedIds(group))}
+                  >
+                    Move to Trash
+                  </button>
+                  {group.items.length > 5 && (
+                    <button
+                      className="quiet-button"
+                      type="button"
+                      onClick={() => toggleGroupExpand(group.sha256)}
+                    >
+                      {isGroupExpanded(group.sha256) ? "Show fewer" : `Show all ${group.items.length}`}
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="duplicate-grid">
-                {(group.items || []).map((item: any, i: number) => (
-                  <div className={`duplicate-card ${selected.has(item.id) ? "selected" : ""} ${i === 0 ? "keep" : ""}`} key={item.id} onClick={() => toggleSelected(item.id)}>
-                    <label className="duplicate-select" onClick={(e) => e.stopPropagation()}>
-                      <input type="checkbox" checked={selected.has(item.id)} onChange={() => toggleSelected(item.id)} />
-                    </label>
-                    {item.kind === "photo" ? <img src={props.assetUrl(item.path)} alt={item.name} style={draftImageStyle(draftTransforms, item.id)} /> : <div className="duplicate-nonimage"><KindBadge kind={item.kind} /></div>}
-                    <div><span>{i === 0 ? "Keep original" : selected.has(item.id) ? "Selected copy" : "Copy"}</span><small>{formatBytesSimple(item.size)} · {item.path}</small></div>
-                  </div>
-                ))}
+                {(() => {
+                  const items = group.items || [];
+                  const expanded = isGroupExpanded(group.sha256);
+                  const visible = expanded ? items : items.slice(0, 3);
+                  const showMore = !expanded && items.length > 3;
+                  return (
+                    <>
+                      {visible.map((item: any, i: number) => (
+                        <div
+                          className={`duplicate-card${selected.has(item.id) ? " duplicate-card-selected" : ""}${
+                            i === 0 ? " duplicate-card-keep" : ""
+                          }`}
+                          key={item.id}
+                          onClick={(e: React.MouseEvent) => {
+                            if (e.target instanceof HTMLInputElement) return;
+                            toggleSelected(item.id);
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            className="duplicate-check"
+                            checked={selected.has(item.id)}
+                            aria-label={i === 0 ? "Keep original" : "Select copy"}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                              e.stopPropagation();
+                              toggleSelected(item.id);
+                            }}
+                          />
+                          {i === 0 && <span className="duplicate-keep-badge" title="Original copy">Original</span>}
+                          <div className="duplicate-thumb">
+                            {item.kind === "photo" ? (
+                              <CachedThumbnail itemId={item.id} name={item.name} size={256} style={draftImageStyle(draftTransforms, item.id)} />
+                            ) : (
+                              <div className="duplicate-nonimage"><KindBadge kind={item.kind} /></div>
+                            )}
+                          </div>
+                          <div className="duplicate-card-body">
+                            <span className="duplicate-card-label">
+                              {i === 0 ? "Keep original" : selected.has(item.id) ? "Selected copy" : "Copy"}
+                            </span>
+                            <div className="duplicate-card-meta">
+                              <span title={item.name}>{item.name}</span>
+                              <small title={item.path}>{formatBytesSimple(item.size)} · {item.path}</small>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      {showMore && (
+                        <div
+                          className={`duplicate-card duplicate-card-showmore${selected.size > 0 && groupItemsSelected(group) ? " duplicate-card-selected" : ""}`}
+                          key="show-all"
+                          onClick={(e: React.MouseEvent) => {
+                            if (e.target instanceof HTMLInputElement) return;
+                            toggleGroupExpand(group.sha256);
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            className="duplicate-check"
+                            checked={groupItemsSelected(group)}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                              e.stopPropagation();
+                              const ids = new Set<string>();
+                              (items || []).slice(1).forEach((it: any) => ids.add(it.id));
+                              setSelected((prev) => {
+                                const next = new Set(prev);
+                                if (groupItemsSelected(group)) {
+                                  ids.forEach((id) => next.delete(id));
+                                } else {
+                                  ids.forEach((id) => next.add(id));
+                                }
+                                return next;
+                              });
+                            }}
+                          />
+                          <span className="duplicate-showmore-label">
+                            Show all {items.length - 3}
+                          </span>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             </section>
           ))}
+          {renderLimit < groups.length && (
+            <div className="grid-more">
+              <button type="button" className="quiet-button" onClick={() => setRenderLimit((n) => Math.min(n + 50, groups.length))}>
+                Show {Math.min(50, groups.length - renderLimit)} more groups
+              </button>
+            </div>
+          )}
         </div>
-      )}
+      </>
+    );
+  };
+
+  return (
+    <div className="feature-page duplicates-page">
+      <div className="page-heading">
+        <div>
+          <p className="eyebrow">Duplicates</p>
+          <h1>Duplicate files</h1>
+          <p className="page-subtitle">
+            {groups.length === 0
+              ? "Duplicate scans compare file content (SHA-256), not just names or sizes."
+              : `${groups.length} group${groups.length === 1 ? "" : "s"} · ${totalCopies} copies · ${formatBytesSimple(reclaimableBytes)} reclaimable`}
+          </p>
+        </div>
+        {!props.busy && groups.length > 0 && (
+          <button className="quiet-button" type="button" onClick={props.onScan}>
+            Rescan
+          </button>
+        )}
+      </div>
+      {renderDuplicates()}
     </div>
   );
 }
 
+
+
+// Browser-based media item creation (temporary until the Tauri backend is
+// wired). Items are normalized to the same shape as the native catalog so the
+// browser prototype and the Rust store agree on a single MediaItem layout.
+
 function formatBytesSimple(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
-  // Step up through units so a 7.5 GB library reads as "7.3 GB" instead of
-  // "7504.9 MB", and a 2 TB drive as "2.0 TB" instead of "2048.0 GB".
   const units = ["B", "KB", "MB", "GB", "TB", "PB"];
   let value = bytes;
   let unit = 0;
@@ -4787,14 +5149,11 @@ function formatBytesSimple(bytes: number): string {
     value /= 1024;
     unit += 1;
   }
-  // Whole bytes need no fraction; larger units read best with one decimal.
   const decimals = unit === 0 ? 0 : 1;
   return `${value.toFixed(decimals)} ${units[unit]}`;
 }
 
-// Browser-based media item creation (temporary until the Tauri backend is
-// wired). Items are normalized to the same shape as the native catalog so the
-// browser prototype and the Rust store agree on a single MediaItem layout.
+
 async function createMediaItemsBrowser(
   files: FileList | File[],
 ): Promise<MediaItem[]> {

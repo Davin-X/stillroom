@@ -5,6 +5,27 @@ import type { LibraryFolder } from "../types/commands";
 import { tauri } from "../commands/tauri";
 import { formatBytes } from "../commands/tauri";
 
+function mergeDuplicateGroups(
+  previous: DuplicateGroup[],
+  current: DuplicateGroup[],
+): DuplicateGroup[] {
+  // Merge by sha256, preferring groups from current (which has newer hashes)
+  // but keeping any previous groups that aren't in current.
+  const byHash = new Map<string, DuplicateGroup>();
+  for (const g of current) {
+    byHash.set(g.sha256, g);
+  }
+  for (const g of previous) {
+    if (!byHash.has(g.sha256)) {
+      byHash.set(g.sha256, g);
+    }
+  }
+  // Sort: largest groups first, then by size
+  return [...byHash.values()].sort((a, b) =>
+    b.items.length - a.items.length || b.size - a.size
+  );
+}
+
 interface LibraryState {
   // Data
   items: MediaItem[];
@@ -579,8 +600,18 @@ export const useLibraryStore = create<LibraryState>()(
       },
 
       deleteItems: async (ids) => {
-        const paths = get().items.filter((i) => ids.includes(i.id)).map((i) => i.path);
-        await tauri.items.moveToTrash(paths);
+        const paths = get()
+            .items
+            .filter((i) => ids.includes(i.id))
+            .map((i) => i.path);
+        set({ busy: true, canceling: false, progress: { phase: "trashing", processed: 0, total: paths.length } });
+        try {
+          await tauri.items.moveToTrash(paths);
+        } catch (e) {
+          set({ busy: false, canceling: false, progress: null });
+          throw e;
+        }
+        set({ busy: false, canceling: false, progress: null });
         set((s) => ({
           items: s.items.filter((i) => !ids.includes(i.id)),
           selectedIds: s.selectedIds.filter((id) => !ids.includes(id)),
@@ -729,13 +760,20 @@ export const useLibraryStore = create<LibraryState>()(
 
       // Duplicates
       scanDuplicates: async () => {
+        // Keep previous results so we can merge partial results on cancel
+        const previousDuplicates = get().duplicates;
         set({ busy: true, canceling: false, progress: { phase: "hashing", processed: 0, total: 0 } });
         try {
           const duplicates = await tauri.duplicates.scan();
           const cancelled = get().canceling;
-          set({ duplicates: cancelled ? get().duplicates : duplicates, busy: false, canceling: false, progress: null });
+          // On cancel, use partial results from this run (already saved to DB).
+          // Merge with previous to preserve groups that were fully resolved.
+          const merged = cancelled
+            ? mergeDuplicateGroups(previousDuplicates, duplicates)
+            : duplicates;
+          set({ duplicates: merged, busy: false, canceling: false, progress: null });
           get().showNotice(cancelled
-            ? "Duplicate scan cancelled. Completed hashes are saved for the next scan."
+            ? `Duplicate scan cancelled. ${merged.length} group${merged.length === 1 ? "" : "s"} shown; completed hashes saved.`
             : duplicates.length ? `Found ${duplicates.length} duplicate groups` : "No duplicates found");
         } catch (e) {
           const cancelled = get().canceling;
@@ -749,6 +787,9 @@ export const useLibraryStore = create<LibraryState>()(
           await tauri.library.cancelScan();
         } catch (e) {
           set({ canceling: false, notice: `Could not cancel scan: ${String(e)}` });
+        } finally {
+          // Always clear canceling state - the backend flag is handled by next scan
+          set({ canceling: false });
         }
       },
 

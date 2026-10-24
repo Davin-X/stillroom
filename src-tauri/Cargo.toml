@@ -62,9 +62,6 @@ objc2-foundation = "0.3.2"
 # Extended attributes for Finder tags
 xattr = "1.5"
 
-# Moving originals to the macOS Trash (recoverable) instead of deleting them
-trash = "5"
-
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

@@ -2165,6 +2165,91 @@ function VideoThumb({ src, name, className }: { src: string; name?: string; clas
   );
 }
 
+const pickerThumbnailCache = new Map<string, string>();
+const pickerThumbnailRequests = new Map<string, Promise<string>>();
+const pickerThumbnailQueue: Array<() => void> = [];
+let activePickerThumbnailRequests = 0;
+
+function loadPickerThumbnail(itemId: string): Promise<string> {
+  const key = `${itemId}:256`;
+  const cached = pickerThumbnailCache.get(key);
+  if (cached) {
+    pickerThumbnailCache.delete(key);
+    pickerThumbnailCache.set(key, cached);
+    return Promise.resolve(cached);
+  }
+  const inFlight = pickerThumbnailRequests.get(key);
+  if (inFlight) return inFlight;
+
+  const request = new Promise<string>((resolve, reject) => {
+    pickerThumbnailQueue.push(() => {
+      activePickerThumbnailRequests += 1;
+      void tauri.library.getThumbnail({ itemId, size: 256 }).then((response) => {
+        pickerThumbnailCache.set(key, response.dataUrl);
+        if (pickerThumbnailCache.size > 160) {
+          const oldest = pickerThumbnailCache.keys().next().value;
+          if (oldest) pickerThumbnailCache.delete(oldest);
+        }
+        resolve(response.dataUrl);
+      }).catch(reject).finally(() => {
+        pickerThumbnailRequests.delete(key);
+        activePickerThumbnailRequests -= 1;
+        while (activePickerThumbnailRequests < 2 && pickerThumbnailQueue.length) {
+          pickerThumbnailQueue.shift()?.();
+        }
+      });
+    });
+  });
+  pickerThumbnailRequests.set(key, request);
+  while (activePickerThumbnailRequests < 2 && pickerThumbnailQueue.length) {
+    pickerThumbnailQueue.shift()?.();
+  }
+  return request;
+}
+
+function PickerThumbnail({ itemId, name, style }: { itemId: string; name: string; style?: React.CSSProperties }) {
+  const placeholderRef = useRef<HTMLSpanElement | null>(null);
+  const [src, setSrc] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [nearViewport, setNearViewport] = useState(false);
+  useEffect(() => {
+    const placeholder = placeholderRef.current;
+    if (!placeholder) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setNearViewport(true);
+      return;
+    }
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setNearViewport(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: "240px" });
+    observer.observe(placeholder);
+    return () => observer.disconnect();
+  }, [itemId]);
+  useEffect(() => {
+    if (!nearViewport) return;
+    let current = true;
+    setSrc(null);
+    setFailed(false);
+    loadPickerThumbnail(itemId).then((value) => {
+      if (current) setSrc(value);
+    }).catch(() => {
+      if (current) setFailed(true);
+    });
+    return () => { current = false; };
+  }, [itemId, nearViewport]);
+
+  return src ? (
+    <img src={src} alt={name} loading="lazy" decoding="async" fetchPriority="low" style={style} />
+  ) : (
+    <span ref={placeholderRef} className="edit-picker-thumb" aria-hidden="true">
+      {!nearViewport ? "" : failed ? "Preview unavailable" : "Loading preview…"}
+    </span>
+  );
+}
+
 function VideoPlayer({ src, name, onFullscreen }: { src: string; name?: string; onFullscreen?: () => void }) {
   const videoAutoPlay = useSettingsStore((s) => s.videoAutoPlay);
   const videoLoop = useSettingsStore((s) => s.videoLoop);
@@ -3657,6 +3742,7 @@ function EditScreen(props: any) {
   const [pickerQuery, setPickerQuery] = useState("");
   const deferredPickerQuery = useDeferredValue(pickerQuery);
   const [pickerLimit, setPickerLimit] = useState(24);
+  const [pickerDraftLimit, setPickerDraftLimit] = useState(12);
   const [confirmReplace, setConfirmReplace] = useState(false);
   const [showOriginalPreview, setShowOriginalPreview] = useState(false);
   const [draftTrayOpen, setDraftTrayOpen] = useState(false);
@@ -3761,7 +3847,9 @@ function EditScreen(props: any) {
           <button className="quiet-button" type="button" onClick={browse}>Browse from Finder…</button>
         </div>
         {(() => {
-          const drafts = savedDraftItems.slice(0, 60);
+          const drafts = savedDraftItems.slice(0, pickerDraftLimit);
+          const remainingDrafts = Math.max(0, savedDraftItems.length - pickerDraftLimit);
+          const nextDrafts = Math.min(12, remainingDrafts);
           if (!drafts.length) return null;
           return (
             <div style={{ marginBottom: 16 }}>
@@ -3769,13 +3857,14 @@ function EditScreen(props: any) {
               <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8, marginBottom: 8 }}>
                 {drafts.map((item: any) => (
                   <button key={item.id} type="button" className="edit-picker-tile" style={{ minWidth: 140, width: 140 }} onClick={() => props.onOpenEdit?.(item)}>
-                    <img src={props.assetUrl(item.path)} alt={item.name} loading="lazy" decoding="async" style={draftImageStyle(draftTransforms, item.id)} />
+                    <PickerThumbnail itemId={item.id} name={item.name} style={draftImageStyle(draftTransforms, item.id)} />
                     <span>{item.name}</span>
                     <span className="draft-badge">Draft</span>
                     <span className="draft-remove" onClick={(e) => { e.stopPropagation(); clearEditDraft(item.id); props.onNotice?.("Draft removed"); }} title="Remove draft">×</span>
                   </button>
                 ))}
               </div>
+              {remainingDrafts > 0 && <button className="quiet-button" type="button" onClick={() => setPickerDraftLimit((limit) => limit + 12)}>Show {nextDrafts} more draft{nextDrafts === 1 ? "" : "s"}</button>}
             </div>
           );
         })()}
@@ -3784,7 +3873,7 @@ function EditScreen(props: any) {
   const hasDraft = draftIds.has(item.id);
   return (
     <button key={item.id} type="button" className="edit-picker-tile" onClick={()=>props.onOpenEdit?.(item)}>
-      <img src={props.assetUrl(item.path)} alt={item.name} loading="lazy" decoding="async" fetchPriority="low" style={draftImageStyle(draftTransforms, item.id)}/>
+      <PickerThumbnail itemId={item.id} name={item.name} style={draftImageStyle(draftTransforms, item.id)} />
       <span>{item.name}</span>
       {hasDraft && <span className="draft-badge">Draft</span>}
       {hasDraft && <span className="draft-remove" onClick={(e) => { e.stopPropagation(); clearEditDraft(item.id); props.onNotice?.("Draft removed"); }} title="Remove draft">×</span>}

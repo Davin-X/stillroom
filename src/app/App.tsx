@@ -2165,53 +2165,84 @@ function VideoThumb({ src, name, className }: { src: string; name?: string; clas
   );
 }
 
-const pickerThumbnailCache = new Map<string, string>();
-const pickerThumbnailRequests = new Map<string, Promise<string>>();
-const pickerThumbnailQueue: Array<() => void> = [];
-let activePickerThumbnailRequests = 0;
+// Shared, size-aware thumbnail cache. Both the editor picker and the library
+// grid used to request multi-megabyte originals; cached JPEGs make scrolling a
+// large library cheap. Keys include the size because the backend caches each
+// rendering separately.
+const thumbnailCache = new Map<string, string>();
+const thumbnailRequests = new Map<string, Promise<string>>();
+const thumbnailQueue: Array<() => void> = [];
+// Roughly one screenful of large tiles plus the editor picker. The DOM keeps
+// mounted thumbnails alive on its own, so this only needs to cover navigation
+// between views without holding the whole library in JS memory.
+const THUMBNAIL_CACHE_LIMIT = 256;
+const MAX_CONCURRENT_THUMBNAIL_REQUESTS = 2;
+type CachedThumbnailSize = 64 | 128 | 256 | 512 | 1024;
+let activeThumbnailRequests = 0;
 
-function loadPickerThumbnail(itemId: string): Promise<string> {
-  const key = `${itemId}:256`;
-  const cached = pickerThumbnailCache.get(key);
+function loadThumbnail(itemId: string, size: CachedThumbnailSize): Promise<string> {
+  const key = `${itemId}:${size}`;
+  const cached = thumbnailCache.get(key);
   if (cached) {
-    pickerThumbnailCache.delete(key);
-    pickerThumbnailCache.set(key, cached);
+    // Refresh insertion order so the least recently used entry is evicted first.
+    thumbnailCache.delete(key);
+    thumbnailCache.set(key, cached);
     return Promise.resolve(cached);
   }
-  const inFlight = pickerThumbnailRequests.get(key);
+  const inFlight = thumbnailRequests.get(key);
   if (inFlight) return inFlight;
 
   const request = new Promise<string>((resolve, reject) => {
-    pickerThumbnailQueue.push(() => {
-      activePickerThumbnailRequests += 1;
-      void tauri.library.getThumbnail({ itemId, size: 256 }).then((response) => {
-        pickerThumbnailCache.set(key, response.dataUrl);
-        if (pickerThumbnailCache.size > 160) {
-          const oldest = pickerThumbnailCache.keys().next().value;
-          if (oldest) pickerThumbnailCache.delete(oldest);
+    thumbnailQueue.push(() => {
+      activeThumbnailRequests += 1;
+      void tauri.library.getThumbnail({ itemId, size }).then((response) => {
+        thumbnailCache.set(key, response.dataUrl);
+        if (thumbnailCache.size > THUMBNAIL_CACHE_LIMIT) {
+          const oldest = thumbnailCache.keys().next().value;
+          if (oldest) thumbnailCache.delete(oldest);
         }
         resolve(response.dataUrl);
       }).catch(reject).finally(() => {
-        pickerThumbnailRequests.delete(key);
-        activePickerThumbnailRequests -= 1;
-        while (activePickerThumbnailRequests < 2 && pickerThumbnailQueue.length) {
-          pickerThumbnailQueue.shift()?.();
+        thumbnailRequests.delete(key);
+        activeThumbnailRequests -= 1;
+        while (activeThumbnailRequests < MAX_CONCURRENT_THUMBNAIL_REQUESTS && thumbnailQueue.length) {
+          thumbnailQueue.shift()?.();
         }
       });
     });
   });
-  pickerThumbnailRequests.set(key, request);
-  while (activePickerThumbnailRequests < 2 && pickerThumbnailQueue.length) {
-    pickerThumbnailQueue.shift()?.();
+  thumbnailRequests.set(key, request);
+  while (activeThumbnailRequests < MAX_CONCURRENT_THUMBNAIL_REQUESTS && thumbnailQueue.length) {
+    thumbnailQueue.shift()?.();
   }
   return request;
 }
 
-function PickerThumbnail({ itemId, name, style }: { itemId: string; name: string; style?: React.CSSProperties }) {
+function CachedThumbnail({
+  itemId,
+  name,
+  size,
+  style,
+  showStatus = false,
+  placeholderClassName,
+}: {
+  itemId: string;
+  name: string;
+  size: CachedThumbnailSize;
+  style?: React.CSSProperties;
+  showStatus?: boolean;
+  placeholderClassName?: string;
+}) {
   const placeholderRef = useRef<HTMLSpanElement | null>(null);
-  const [src, setSrc] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [loaded, setLoaded] = useState<{ key: string; src: string } | null>(null);
+  const [failedKey, setFailedKey] = useState<string | null>(null);
   const [nearViewport, setNearViewport] = useState(false);
+  const requestKey = `${itemId}:${size}`;
+  // Never paint a thumbnail for a previous item or size while the new request
+  // is in flight (e.g. switching the grid density or layout).
+  const src = loaded?.key === requestKey ? loaded.src : null;
+  const failed = failedKey === requestKey;
+
   useEffect(() => {
     const placeholder = placeholderRef.current;
     if (!placeholder) return;
@@ -2219,34 +2250,54 @@ function PickerThumbnail({ itemId, name, style }: { itemId: string; name: string
       setNearViewport(true);
       return;
     }
+    // Scrollable panels clip their contents, so observing against the viewport
+    // would ignore the prefetch margin. Use the nearest panel as the root.
+    const root = placeholder.closest(".library-grid-container, .edit-picker-grid");
     const observer = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting) {
         setNearViewport(true);
         observer.disconnect();
       }
-    }, { rootMargin: "240px" });
+    }, { root, rootMargin: "240px" });
     observer.observe(placeholder);
     return () => observer.disconnect();
-  }, [itemId]);
+  }, [itemId, size]);
+
   useEffect(() => {
     if (!nearViewport) return;
     let current = true;
-    setSrc(null);
-    setFailed(false);
-    loadPickerThumbnail(itemId).then((value) => {
-      if (current) setSrc(value);
+    loadThumbnail(itemId, size).then((value) => {
+      if (current) setLoaded({ key: requestKey, src: value });
     }).catch(() => {
-      if (current) setFailed(true);
+      if (current) setFailedKey(requestKey);
     });
     return () => { current = false; };
-  }, [itemId, nearViewport]);
+  }, [itemId, size, nearViewport, requestKey]);
 
-  return src ? (
-    <img src={src} alt={name} loading="lazy" decoding="async" fetchPriority="low" style={style} />
-  ) : (
-    <span ref={placeholderRef} className="edit-picker-thumb" aria-hidden="true">
-      {!nearViewport ? "" : failed ? "Preview unavailable" : "Loading preview…"}
+  if (src) {
+    return <img src={src} alt={name} loading="lazy" decoding="async" fetchPriority="low" style={style} />;
+  }
+  return (
+    <span
+      ref={placeholderRef}
+      className={`cached-thumb-placeholder${failed ? " is-failed" : " is-loading"}${placeholderClassName ? ` ${placeholderClassName}` : ""}`}
+      aria-hidden="true"
+    >
+      {showStatus ? (failed ? "Preview unavailable" : nearViewport ? "Loading preview…" : "") : null}
     </span>
+  );
+}
+
+function PickerThumbnail({ itemId, name, style }: { itemId: string; name: string; style?: React.CSSProperties }) {
+  return (
+    <CachedThumbnail
+      itemId={itemId}
+      name={name}
+      size={256}
+      style={style}
+      showStatus
+      placeholderClassName="edit-picker-thumb"
+    />
   );
 }
 
@@ -2590,6 +2641,10 @@ function LibraryScreen(props: any) {
   const draftTransforms = useDraftTransforms();
   const thumbnailSize = useThumbnailSize();
   const settingsStore = useSettingsStore();
+  // The grid can request a cached JPEG instead of decoding the original. Use
+  // roughly 2x the CSS tile width so retina displays stay sharp; the details
+  // preview is only 42-52 px, so a 128 px thumbnail is plenty there.
+  const thumbnailPixels = props.layout === "overview" ? 1024 : props.layout === "details" ? 128 : 512;
   // Hidden items are masked by default. A pointer-down reveals just that tile
   // while it is held; releasing (or leaving the tile) puts the veil back.
   const [revealedIds, setRevealedIds] = useState<Set<string>>(() => new Set());
@@ -3251,7 +3306,7 @@ function LibraryScreen(props: any) {
                       </div>
                       <button type="button" className="tile-open-button" onClick={(e) => handleTileClick(item, e)} onDoubleClick={() => handleTileDoubleClick(item)} {...holdHandlers(item.id)}>
                         <span className="tile-image">
-                          {item.kind === "video" ? <VideoThumb src={assetUrl(item.path)} name={tileAlt(item)} /> : item.kind === "photo" ? <img src={assetUrl(item.path)} alt={tileAlt(item)} loading="lazy" style={draftImageStyle(draftTransforms, item.id)} /> : <span className="raw-tile"><KindBadge kind={item.kind} /></span>}
+                          {item.kind === "video" ? <VideoThumb src={assetUrl(item.path)} name={tileAlt(item)} /> : item.kind === "photo" ? <CachedThumbnail itemId={item.id} name={tileAlt(item)} size={thumbnailPixels} style={draftImageStyle(draftTransforms, item.id)} /> : <span className="raw-tile"><KindBadge kind={item.kind} /></span>}
                           {item.kind === "video" && <span className="video-label"><PlayIcon size={10} /></span>}
                           {item.kind === "raw" && <span className="format-label"><KindBadge kind={item.kind} /></span>}
                           {item.favorite && !masked(item) ? (
@@ -3303,7 +3358,7 @@ function LibraryScreen(props: any) {
                             </div>
                             <button type="button" className="tile-open-button" onClick={(e) => handleTileClick(item, e)} onDoubleClick={() => handleTileDoubleClick(item)} {...holdHandlers(item.id)}>
                               <span className="tile-image">
-                                {item.kind === "video" ? <VideoThumb src={assetUrl(item.path)} name={tileAlt(item)} /> : item.kind === "photo" ? <img src={assetUrl(item.path)} alt={tileAlt(item)} loading="lazy" style={draftImageStyle(draftTransforms, item.id)} /> : <span className="raw-tile"><KindBadge kind={item.kind} /></span>}
+                                {item.kind === "video" ? <VideoThumb src={assetUrl(item.path)} name={tileAlt(item)} /> : item.kind === "photo" ? <CachedThumbnail itemId={item.id} name={tileAlt(item)} size={thumbnailPixels} style={draftImageStyle(draftTransforms, item.id)} /> : <span className="raw-tile"><KindBadge kind={item.kind} /></span>}
                                 {item.kind === "video" && <span className="video-label"><PlayIcon size={10} /></span>}
                                 {item.kind === "raw" && <span className="format-label"><KindBadge kind={item.kind} /></span>}
                           {item.favorite && !masked(item) ? (
@@ -3338,7 +3393,7 @@ function LibraryScreen(props: any) {
                     </div>
                     <button type="button" className="tile-open-button" onClick={(e) => handleTileClick(item, e)} onDoubleClick={() => handleTileDoubleClick(item)} {...holdHandlers(item.id)}>
                       <span className="tile-image">
-                        {item.kind === "video" ? <VideoThumb src={assetUrl(item.path)} name={tileAlt(item)} /> : item.kind === "photo" ? <img src={assetUrl(item.path)} alt={tileAlt(item)} loading="lazy" style={draftImageStyle(draftTransforms, item.id)} /> : <span className="raw-tile"><KindBadge kind={item.kind} /></span>}
+                        {item.kind === "video" ? <VideoThumb src={assetUrl(item.path)} name={tileAlt(item)} /> : item.kind === "photo" ? <CachedThumbnail itemId={item.id} name={tileAlt(item)} size={thumbnailPixels} style={draftImageStyle(draftTransforms, item.id)} /> : <span className="raw-tile"><KindBadge kind={item.kind} /></span>}
                         {item.kind === "video" && <span className="video-label"><PlayIcon size={10} /></span>}
                         {item.kind === "raw" && <span className="format-label"><KindBadge kind={item.kind} /></span>}
                           {item.favorite && !masked(item) ? (

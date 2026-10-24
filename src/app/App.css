@@ -1403,6 +1403,26 @@ body {
   transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* Grid tiles already reserve their ratio, so the shared placeholder fills the
+   box while the cached JPEG loads. */
+.tile-image .cached-thumb-placeholder {
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+/* Masonry columns have no fixed tile ratio yet; use the common 4:3 box until
+   the real photo arrives so lazy placeholders still have an observable area. */
+.gallery-grid.layout-columns .tile-image .cached-thumb-placeholder {
+  height: auto;
+  aspect-ratio: 4 / 3;
+}
+
+/* The details preview is tiny; a shimmer on every row is just noise. */
+.gallery-grid.layout-details .tile-image .cached-thumb-placeholder.is-loading {
+  animation: none;
+  background-image: none;
+}
+
 .gallery-tile:hover .tile-image img {
   transform: scale(1.05);
 }
@@ -1544,6 +1564,7 @@ body {
    confirmed. This is shoulder-surfing deterrence, not file encryption. */
 .gallery-tile.hidden-obscured .tile-image img,
 .gallery-tile.hidden-obscured .tile-image video,
+.gallery-tile.hidden-obscured .tile-image .cached-thumb-placeholder,
 .inspector-image.hidden-obscured img,
 .inspector-image.hidden-obscured video {
   filter: blur(18px) saturate(0.55) brightness(0.82);
